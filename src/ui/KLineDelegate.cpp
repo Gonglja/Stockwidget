@@ -10,9 +10,16 @@ const QColor kNeutral(0x49, 0x49, 0x49);
 
 KLineDelegate::KLineDelegate(QObject* parent) : QStyledItemDelegate(parent) {}
 
-void KLineDelegate::setColorScheme(bool defaultColor, const QColor& fg) {
+void KLineDelegate::setColorScheme(bool defaultColor, const QColor& fg, qreal opacity) {
     m_defaultColor = defaultColor;
     m_fg = fg;
+    m_opacity = qBound(0.0, opacity, 1.0);
+}
+
+QColor KLineDelegate::scaled(const QColor& c) const {
+    QColor out(c);
+    out.setAlpha(qBound(1, qRound(c.alpha() * m_opacity), 255));
+    return out;
 }
 
 void KLineDelegate::setPointSize(int pt) {
@@ -50,16 +57,16 @@ void KLineDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option,
     const int bodyW = qMax(5, qMin(int(krect.width() * 0.4 * m_scale), 10));
     const double x = krect.center().x();
 
-    QColor dash(m_defaultColor ? kNeutral : m_fg);
-    dash.setAlpha(180);
+    QColor dash(m_defaultColor ? scaled(kNeutral) : scaled(m_fg));
+    dash.setAlpha(qRound(dash.alpha() * 0.7));
     painter->setPen(QPen(dash, 1, Qt::DashLine));
     painter->drawLine(QPointF(x - bodyW, yP), QPointF(x + bodyW, yP));
 
-    QColor kcolor = m_fg;
+    QColor kcolor = scaled(m_fg);
     if (m_defaultColor) {
-        if (c > o) kcolor = kUp;
-        else if (c < o) kcolor = kDown;
-        else kcolor = kNeutral;
+        if (c > o) kcolor = scaled(kUp);
+        else if (c < o) kcolor = scaled(kDown);
+        else kcolor = scaled(kNeutral);
     }
 
     const double top = qMin(yO, yC), bot = qMax(yO, yC);

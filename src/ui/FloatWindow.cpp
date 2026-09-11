@@ -196,7 +196,10 @@ void FloatWindow::applyConfig(const QJsonObject& raw) {
     m_table->setFont(m_font);
     m_table->horizontalHeader()->setFont(m_font);
     m_table->horizontalHeader()->setVisible(m_headerVisible);
-    setWindowOpacity(qBound(20, m_opacityPct, 100) / 100.0);
+    // 注意：不用 setWindowOpacity —— 分层窗口 alpha=0 的像素会对鼠标穿透。
+    // 整体不透明度改为烘入颜色 alpha，并将背景 alpha 钳制到 >=1 以保证整块可点击。
+    setWindowOpacity(1.0);
+    m_opacityPct = qBound(0, m_opacityPct, 100);
 
     QuoteFormatOptions opt;
     opt.shortCode = m_shortCode;
@@ -220,8 +223,15 @@ void FloatWindow::applyConfig(const QJsonObject& raw) {
 }
 
 void FloatWindow::applyStyle() {
+    const QColor fg = effectiveFg();
     const QString colorRule =
-        m_defaultColor ? QString() : QStringLiteral("color: %1;").arg(m_fg.name());
+        m_defaultColor
+            ? QString()
+            : QStringLiteral("color: rgba(%1,%2,%3,%4);")
+                  .arg(fg.red())
+                  .arg(fg.green())
+                  .arg(fg.blue())
+                  .arg(fg.alpha());
     const QString lineCol = QStringLiteral("rgba(%1,%2,%3,80)")
                                 .arg(m_fg.red())
                                 .arg(m_fg.green())
@@ -241,9 +251,22 @@ void FloatWindow::applyStyle() {
 void FloatWindow::applyFontAndMetrics() {
     const int rowH = m_table->fontMetrics().height() + qMax(0, m_lineExtraPx);
     m_table->verticalHeader()->setDefaultSectionSize(rowH);
-    m_klineDelegate->setColorScheme(m_defaultColor, m_fg);
+    const qreal opacity = m_opacityPct / 100.0;
+    m_klineDelegate->setColorScheme(m_defaultColor, m_fg, opacity);
     m_klineDelegate->setPointSize(m_font.pointSize());
-    m_model->setColorScheme(m_defaultColor, m_fg);
+    m_model->setColorScheme(m_defaultColor, m_fg, opacity);
+}
+
+QColor FloatWindow::effectiveBg() const {
+    QColor c = m_bg;
+    c.setAlpha(qBound(1, qRound(m_bg.alpha() * m_opacityPct / 100.0), 255));
+    return c;
+}
+
+QColor FloatWindow::effectiveFg() const {
+    QColor c = m_fg;
+    c.setAlpha(qBound(1, qRound(m_fg.alpha() * m_opacityPct / 100.0), 255));
+    return c;
 }
 
 void FloatWindow::rebuildColumns() {
@@ -400,7 +423,7 @@ void FloatWindow::restoreFromEdge() {
 void FloatWindow::paintEvent(QPaintEvent*) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing, true);
-    p.setBrush(m_bg);
+    p.setBrush(effectiveBg());
     p.setPen(Qt::NoPen);
     p.drawRoundedRect(rect(), 5, 5);
 }
@@ -420,7 +443,7 @@ QJsonObject FloatWindow::currentConfig() const {
     cfg[QStringLiteral("grid_visible")] = m_gridVisible;
     cfg[QStringLiteral("default_color")] = m_defaultColor;
     cfg[QStringLiteral("line_extra_px")] = m_lineExtraPx;
-    cfg[QStringLiteral("opacity_pct")] = int(qRound(windowOpacity() * 100));
+    cfg[QStringLiteral("opacity_pct")] = m_opacityPct;
     cfg[QStringLiteral("font_family")] = m_fontFamily;
     cfg[QStringLiteral("font_size")] = m_fontSize;
     cfg[QStringLiteral("hotkey")] = m_hotkey;

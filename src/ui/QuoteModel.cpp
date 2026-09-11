@@ -57,12 +57,19 @@ void QuoteModel::rebuildCache() {
     }
 }
 
-void QuoteModel::setColorScheme(bool defaultColor, const QColor& fg) {
+void QuoteModel::setColorScheme(bool defaultColor, const QColor& fg, qreal opacity) {
     m_defaultColor = defaultColor;
     m_fg = fg;
+    m_opacity = qBound(0.0, opacity, 1.0);
     if (rowCount() > 0 && columnCount() > 0)
         emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1),
                          {Qt::ForegroundRole});
+}
+
+QColor QuoteModel::scaled(const QColor& c) const {
+    QColor out(c);
+    out.setAlpha(qBound(1, qRound(c.alpha() * m_opacity), 255));
+    return out;
 }
 
 int QuoteModel::klineColumn() const {
@@ -90,11 +97,11 @@ QVariant QuoteModel::data(const QModelIndex& index, int role) const {
         case Qt::TextAlignmentRole:
             return int((col.rightAlign ? Qt::AlignRight : Qt::AlignLeft) | Qt::AlignVCenter);
         case Qt::ForegroundRole: {
-            if (!m_defaultColor || !col.colored) return m_fg;
+            if (!m_defaultColor || !col.colored) return scaled(m_fg);
             const int sign = m_signCache[r][index.column()];
-            if (sign > 0) return QColor(0xdd, 0x21, 0x00);
-            if (sign < 0) return QColor(0x01, 0x99, 0x33);
-            return QColor(0x49, 0x49, 0x49);
+            if (sign > 0) return scaled(QColor(0xdd, 0x21, 0x00));
+            if (sign < 0) return scaled(QColor(0x01, 0x99, 0x33));
+            return scaled(QColor(0x49, 0x49, 0x49));
         }
         case KLineRole: {
             if (!col.isKLine) return {};

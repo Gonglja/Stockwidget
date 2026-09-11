@@ -57,6 +57,8 @@ private:
     bool inShowWindow() const;
     bool inFetchWindow() const;
     void evaluateSchedule();
+    QColor effectiveBg() const;
+    QColor effectiveFg() const;
     void onQuotesReady(const QVector<Quote>& quotes);
     QString layoutSignature() const;
 

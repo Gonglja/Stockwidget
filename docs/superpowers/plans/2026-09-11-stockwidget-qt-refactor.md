@@ -2911,6 +2911,11 @@ git commit -m "build: windeployqt 打包脚本"
    - 问题：开启贴边隐藏后，用托盘/快捷键显示会很快又收起，看起来像“窗口不见了”。
    - `show()` 后给 3s 宽限（`m_edgeGraceUntil`），期间不自动收起；`locate()` 给 10s 并绕过显示时段（`m_forceVisibleUntil`）。
    - 托盘右键新增「定位浮窗」：居中 + 恢复 + 强制显示。
+9. **修复：背景完全透明时整窗鼠标穿透**（点击不到）。
+   - 根因（探针实测）：`bg.alpha=0` + `opacity_pct=24` 时 `WindowFromPoint` 在窗口内 6 个点均命中桌面（`SysListView32`），命中 0/6。Windows 分层窗口命中测试基于 alpha，**alpha=0 的像素对鼠标穿透**，所以只有文字笔画能点到。
+   - 修复：不再用 `setWindowOpacity()`（会将 alpha 乘向 0），改为把整体不透明度**烘入颜色 alpha**；绘制背景时 alpha 钳制到 **≥1**。修复后同样配置命中 **6/6**。
+   - “整体不透明度”同时应用于文字色与 K 线的涨/跌/中性色（`QuoteModel`/`KLineDelegate` 新增 `opacity` 参数）。
+   - 回归测试：`test_ui::transparentBackgroundStillHitTestable`（断言 `windowOpacity()==1` 且抓图背景 alpha ≥1）。
 
 ### 诊断方法（可复现）
 

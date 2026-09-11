@@ -12,7 +12,7 @@ public:
 
     void setColumns(const QVector<ColumnSpec>& cols);
     void setQuotes(const QVector<Quote>& quotes);
-    void setColorScheme(bool defaultColor, const QColor& fg);
+    void setColorScheme(bool defaultColor, const QColor& fg, qreal opacity = 1.0);
     int klineColumn() const;
 
     int rowCount(const QModelIndex& parent = {}) const override;
@@ -23,10 +23,12 @@ public:
 
 private:
     void rebuildCache();
+    QColor scaled(const QColor& c) const;
     QVector<ColumnSpec> m_cols;
     QVector<Quote> m_quotes;
     QVector<QVector<QString>> m_cellCache;
     QVector<QVector<int>> m_signCache;
     bool m_defaultColor = false;
+    qreal m_opacity = 1.0;
     QColor m_fg = QColor(QStringLiteral("#FFFFFF"));
 };

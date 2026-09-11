@@ -131,6 +131,22 @@ private slots:
         if (!atMidnight) QVERIFY(w.isVisible());   // 定位可强制显示
     }
 
+    void transparentBackgroundStillHitTestable() {
+        // 回归：背景 alpha=0 + 低整体不透明度时，必须仍可命中。
+        // Windows 分层窗口对 alpha=0 的像素会鼠标穿透，因此背景 alpha 需钳制到 >=1。
+        QJsonObject cfg = baseConfig();
+        cfg["bg"] = QJsonObject{{"r", 0}, {"g", 0}, {"b", 0}, {"a", 0}};
+        cfg["opacity_pct"] = 24;
+        ProbeWindow w(cfg);
+        w.show();
+        QTest::qWait(150);
+        QCOMPARE(w.windowOpacity(), 1.0);  // 不得再用 setWindowOpacity
+        const QImage img = w.grab().toImage();
+        QVERIFY(!img.isNull());
+        const QColor bg = img.pixelColor(w.width() / 2, 4);  // 顶部内边距处（无文字）
+        QVERIFY2(bg.alpha() >= 1, "background alpha must be >= 1 to stay hit-testable");
+    }
+
     void settingsDialogBuildsAllTabs() {
         ProbeWindow w(baseConfig());
         w.show();
