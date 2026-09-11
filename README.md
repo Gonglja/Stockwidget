@@ -67,7 +67,34 @@ scripts\test.cmd
 scripts\package.cmd      # 输出到 dist\
 ```
 
-若 Qt 路径不同，修改 `scripts\*.cmd` 里的 `QT` 变量即可（默认 `C:/1/Qt/6.11.1/msvc2022_64`）。
+若 Qt 路径不同，设置环境变量 `QT_DIR` 即可（本机默认 `C:/1/Qt/6.11.1/msvc2022_64`）：
+
+```powershell
+$env:QT_DIR = "D:/Qt/6.11.1/msvc2022_64"
+scripts\build.cmd
+```
+
+---
+
+## 🚀 发布（GitHub Actions）
+
+推送 `v*` 标签即**自动编译并创建 Release**：
+
+```bash
+git tag v1.5.0
+git push origin v1.5.0
+```
+
+流程见 `.github/workflows/release.yml`：
+
+1. 安装 Qt **6.11.1**（`msvc2022_64` + `qt5compat`）
+2. `scripts\build.cmd` 构建
+3. `scripts\test.cmd` 跑全部测试
+4. `scripts\package.cmd` 用 `windeployqt` 打包
+5. 上传 `StockWidget-<tag>-win64.zip` 并创建 Release（自动生成变更说明）
+
+也可在 Actions 页**手动触发**（`workflow_dispatch`，只出 artifact、不建 Release）。
+CI 通过环境变量 `QT_DIR` 指定 Qt 路径；MSVC 环境由 `scripts\_vcvars.cmd` 经 `vswhere` 自动定位。
 
 ---
 

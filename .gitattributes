@@ -1,0 +1,3 @@
+# .cmd 必须用 CRLF，否则批处理在部分情况下（标签/for）会出错
+*.cmd text eol=crlf
+*.bat text eol=crlf

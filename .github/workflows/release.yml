@@ -1,0 +1,67 @@
+name: release
+
+# 推送 v* 标签时自动编译并创建 Release；也可在 Actions 页手动触发。
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    env:
+      QT_DIR: C:/Qt/6.11.1/msvc2022_64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Qt 6.11.1 (msvc2022_64) + ninja
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install aqtinstall ninja
+          python -m aqt install-qt windows desktop 6.11.1 win64_msvc2022_64 -m qt5compat --outputdir C:/Qt
+          if (-not (Test-Path "$env:QT_DIR/bin/qmake.exe")) { throw "Qt install failed: $env:QT_DIR" }
+
+      - name: Build
+        shell: cmd
+        run: scripts\build.cmd
+
+      - name: Test
+        shell: cmd
+        run: scripts\test.cmd
+
+      - name: Package (windeployqt)
+        shell: cmd
+        run: scripts\package.cmd
+
+      - name: Zip artifact
+        shell: pwsh
+        run: |
+          $name = "StockWidget-${{ github.ref_name }}-win64"
+          Compress-Archive -Path dist\* -DestinationPath "$name.zip"
+          Write-Host "created $name.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: StockWidget-win64
+          path: StockWidget-*-win64.zip
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: StockWidget-*-win64.zip
+          generate_release_notes: true
