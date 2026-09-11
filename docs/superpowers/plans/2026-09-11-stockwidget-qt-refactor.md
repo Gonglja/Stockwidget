@@ -2889,6 +2889,13 @@ git commit -m "build: windeployqt 打包脚本"
    - 现实现：在已安装过滤器的子控件上拦截 `ContextMenu`，构造并转发 `QContextMenuEvent` 给窗口自身（保留虚分派）。
 3. **单击（非拖动）隐藏**（原计划为双击隐藏）。
    - `eventFilter`/`mouseReleaseEvent` 记录按下点，位移小于 `QApplication::startDragDistance()` 视为单击 → `hide()`；超过阈值才移动窗口，拖动行为不变。双击仍然隐藏。
+4. **新增「点击区域」设置**（`padding_px`，默认 12，0–40）。
+   - 原实现面板内边距固定为 `10,6,10,6`，窗口较小时难以点到；现改为可调内边距，默认加大。
+5. **补齐快捷键可视化设置**。
+   - 首次交付的设置面板「常规」页漏了快捷键编辑器（原计划 Task 9 未包含），只能改 JSON。
+   - 现新增 `QKeySequenceEdit`（限制单个组合键），写入 `hotkey` 后由 `Application::saveConfig` 检测变化并**即时重新注册**钩子。
+   - 同时修正：程序图标/开机启动的修改也由 `saveConfig` 即时应用（原来仅在启动时应用一次）。
+   - 已用 `SendInput` 验证自定义组合键：`Ctrl+Shift+F9` → `registered=1 fired=1`。
 
 ### 诊断方法（可复现）
 

@@ -5,6 +5,7 @@
 class FloatWindow;
 class QCheckBox;
 class QComboBox;
+class QKeySequenceEdit;
 class QListWidget;
 class QListWidgetItem;
 class QPushButton;
@@ -39,7 +40,9 @@ private:
     QSlider* m_winOpacity = nullptr;
     QSlider* m_fontSize = nullptr;
     QSlider* m_lineSpacing = nullptr;
+    QSlider* m_padding = nullptr;
     QComboBox* m_fontFamily = nullptr;
+    QKeySequenceEdit* m_hotkeyEdit = nullptr;
     QComboBox* m_interval = nullptr;
     QComboBox* m_icon = nullptr;
     int m_builtTabs = 0;

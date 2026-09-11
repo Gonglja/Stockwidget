@@ -26,4 +26,6 @@ private:
     QSystemTrayIcon* m_tray = nullptr;
     GlobalHotkey* m_hotkey = nullptr;
     QString m_iconChoice;
+    QString m_appliedHotkey;
+    bool m_appliedStartOnBoot = false;
 };

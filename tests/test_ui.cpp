@@ -3,8 +3,12 @@
 #include <QContextMenuEvent>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QKeySequenceEdit>
+#include <QSlider>
+#include <QTabWidget>
 #include <QTableView>
 #include "ui/FloatWindow.h"
+#include "ui/SettingsDialog.h"
 
 // Subclass so the context-menu slot doesn't open a modal menu during tests.
 class ProbeWindow : public FloatWindow {
@@ -77,6 +81,30 @@ private slots:
         QApplication::sendEvent(&w, &ev);
         QTest::qWait(50);
         QCOMPARE(w.ctxCount, 1);
+    }
+
+    void settingsDialogBuildsAllTabs() {
+        ProbeWindow w(baseConfig());
+        w.show();
+        QTest::qWait(150);
+
+        SettingsDialog dlg(&w, &w);
+        dlg.show();
+        QTest::qWait(50);
+        QVERIFY(dlg.isVisible());
+
+        auto* tabs = dlg.findChild<QTabWidget*>();
+        QVERIFY(tabs);
+        QCOMPARE(tabs->count(), 4);
+        for (int i = 0; i < tabs->count(); ++i) {
+            tabs->setCurrentIndex(i);
+            QTest::qWait(30);
+        }
+        // 常规页应含快捷键编辑器；外观页应含点击区域滑块
+        QVERIFY(dlg.findChild<QKeySequenceEdit*>());
+        QVERIFY(dlg.findChild<QSlider*>());
+        dlg.close();
+        QTest::qWait(50);
     }
 };
 

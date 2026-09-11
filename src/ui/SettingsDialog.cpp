@@ -12,6 +12,8 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QJsonArray>
+#include <QKeySequence>
+#include <QKeySequenceEdit>
 #include <QLabel>
 #include <QListWidget>
 #include <QPushButton>
@@ -243,12 +245,18 @@ QWidget* SettingsDialog::buildAppearanceTab() {
     m_lineSpacing->setRange(0, 20);
     m_lineSpacing->setMinimumWidth(150);
     m_lineSpacing->setValue(cfg.value(QStringLiteral("line_extra_px")).toInt(1));
+    m_padding = new QSlider(Qt::Horizontal, font);
+    m_padding->setRange(0, 40);
+    m_padding->setMinimumWidth(150);
+    m_padding->setValue(cfg.value(QStringLiteral("padding_px")).toInt(12));
     fg->addWidget(new QLabel(QStringLiteral("字体"), font), 0, 0);
     fg->addWidget(m_fontFamily, 0, 1);
     fg->addWidget(new QLabel(QStringLiteral("字号"), font), 1, 0);
     fg->addWidget(m_fontSize, 1, 1);
     fg->addWidget(new QLabel(QStringLiteral("行距"), font), 2, 0);
     fg->addWidget(m_lineSpacing, 2, 1);
+    fg->addWidget(new QLabel(QStringLiteral("点击区域"), font), 3, 0);
+    fg->addWidget(m_padding, 3, 1);
     lay->addWidget(font);
 
     auto update = [this](const QString& key, const QJsonValue& value) {
@@ -280,6 +288,8 @@ QWidget* SettingsDialog::buildAppearanceTab() {
             [update](int v) { update(QStringLiteral("font_size"), v); });
     connect(m_lineSpacing, &QSlider::valueChanged, this,
             [update](int v) { update(QStringLiteral("line_extra_px"), v); });
+    connect(m_padding, &QSlider::valueChanged, this,
+            [update](int v) { update(QStringLiteral("padding_px"), v); });
     connect(m_fgButton, &QPushButton::clicked, this, &SettingsDialog::pickForeground);
     connect(m_bgButton, &QPushButton::clicked, this, &SettingsDialog::pickBackground);
     return page;
@@ -293,6 +303,26 @@ QWidget* SettingsDialog::buildGeneralTab() {
     auto* startOnBoot = new QCheckBox(QStringLiteral("开机启动"), page);
     startOnBoot->setChecked(cfg.value(QStringLiteral("start_on_boot")).toBool(false));
     lay->addWidget(startOnBoot);
+
+    auto* hotkeyGroup = new QGroupBox(QStringLiteral("快捷键"), page);
+    auto* hg = new QHBoxLayout(hotkeyGroup);
+    hg->addWidget(new QLabel(QStringLiteral("显示/隐藏浮窗："), hotkeyGroup));
+    m_hotkeyEdit = new QKeySequenceEdit(hotkeyGroup);
+    m_hotkeyEdit->setMaximumSequenceLength(1);
+    m_hotkeyEdit->setKeySequence(
+        QKeySequence(cfg.value(QStringLiteral("hotkey")).toString(QStringLiteral("Ctrl+Alt+F"))));
+    hg->addWidget(m_hotkeyEdit);
+    hg->addStretch(1);
+    lay->addWidget(hotkeyGroup);
+
+    connect(m_hotkeyEdit, &QKeySequenceEdit::editingFinished, this, [this] {
+        const QString seq =
+            m_hotkeyEdit->keySequence().toString(QKeySequence::PortableText);
+        if (seq.isEmpty()) return;
+        QJsonObject c = m_win->currentConfig();
+        c[QStringLiteral("hotkey")] = seq;
+        m_win->applyConfig(c);
+    });
 
     auto* iconGroup = new QGroupBox(QStringLiteral("程序图标"), page);
     auto* ih = new QHBoxLayout(iconGroup);

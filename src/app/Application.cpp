@@ -22,9 +22,11 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv) {
 
     m_hotkey = new GlobalHotkey(this);
     connect(m_hotkey, &GlobalHotkey::activated, this, &Application::toggleWindow);
-    applyHotkey(m_config.value(QStringLiteral("hotkey")).toString(QStringLiteral("Ctrl+Alt+F")));
+    m_appliedHotkey = m_config.value(QStringLiteral("hotkey")).toString(QStringLiteral("Ctrl+Alt+F"));
+    applyHotkey(m_appliedHotkey);
 
-    AutoStart::setEnabled(m_config.value(QStringLiteral("start_on_boot")).toBool(false));
+    m_appliedStartOnBoot = m_config.value(QStringLiteral("start_on_boot")).toBool(false);
+    AutoStart::setEnabled(m_appliedStartOnBoot);
     applyIcon(m_iconChoice);
 
     m_tray = new QSystemTrayIcon(windowIcon(), this);
@@ -92,7 +94,23 @@ void Application::openSettings() { SettingsDialog::showFor(m_window, m_window); 
 void Application::saveConfig() {
     if (!m_window) return;
     QJsonObject cfg = ConfigStore::normalize(m_window->currentConfig());
+
+    const QString hotkey = cfg.value(QStringLiteral("hotkey")).toString(QStringLiteral("Ctrl+Alt+F"));
+    if (hotkey != m_appliedHotkey) {
+        m_appliedHotkey = hotkey;
+        applyHotkey(GlobalHotkey::normalize(hotkey));
+    }
+
+    const QString iconChoice = cfg.value(QStringLiteral("app_icon")).toString(QStringLiteral("default"));
+    if (iconChoice != m_iconChoice) applyIcon(iconChoice);
     cfg[QStringLiteral("app_icon")] = m_iconChoice;
+
+    const bool startOnBoot = cfg.value(QStringLiteral("start_on_boot")).toBool(false);
+    if (startOnBoot != m_appliedStartOnBoot) {
+        m_appliedStartOnBoot = startOnBoot;
+        AutoStart::setEnabled(startOnBoot);
+    }
+
     m_config = cfg;
     ConfigStore::save(cfg);
 }

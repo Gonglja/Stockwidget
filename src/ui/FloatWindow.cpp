@@ -44,14 +44,13 @@ FloatWindow::FloatWindow(const QJsonObject& cfg, QWidget* parent) : QWidget(pare
     setFocusPolicy(Qt::StrongFocus);
 
     m_panel = new QWidget(this);
-    auto* vbox = new QVBoxLayout(m_panel);
-    vbox->setContentsMargins(10, 6, 10, 6);
-    vbox->setSpacing(0);
+    m_vbox = new QVBoxLayout(m_panel);
+    m_vbox->setSpacing(0);
 
     m_errorLabel = new QLabel(QString(), m_panel);
     m_errorLabel->setStyleSheet(QStringLiteral("color: #ff6666; padding: 2px 4px;"));
     m_errorLabel->setVisible(false);
-    vbox->addWidget(m_errorLabel);
+    m_vbox->addWidget(m_errorLabel);
 
     m_table = new QTableView(m_panel);
     m_table->setFrameShape(QFrame::NoFrame);
@@ -65,7 +64,7 @@ FloatWindow::FloatWindow(const QJsonObject& cfg, QWidget* parent) : QWidget(pare
     m_table->horizontalHeader()->setStretchLastSection(false);
     m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     m_table->horizontalHeader()->setAttribute(Qt::WA_TransparentForMouseEvents, true);
-    vbox->addWidget(m_table);
+    m_vbox->addWidget(m_table);
 
     m_model = new QuoteModel(this);
     m_table->setModel(m_model);
@@ -112,6 +111,7 @@ QString FloatWindow::layoutSignature() const {
              (QuoteColumns::isVisible(m_columnCfg, h) ? QStringLiteral("1") : QStringLiteral("0"));
     s += QLatin1Char('|') + m_fontFamily + QLatin1Char('|') + QString::number(m_fontSize) +
          QLatin1Char('|') + QString::number(m_lineExtraPx) +
+         QLatin1Char('|') + QString::number(m_paddingPx) +
          (m_headerVisible ? QStringLiteral("|H1") : QStringLiteral("|H0"));
     return s;
 }
@@ -145,6 +145,7 @@ void FloatWindow::applyConfig(const QJsonObject& raw) {
     m_gridVisible = raw.value(QStringLiteral("grid_visible")).toBool(false);
     m_defaultColor = raw.value(QStringLiteral("default_color")).toBool(false);
     m_lineExtraPx = raw.value(QStringLiteral("line_extra_px")).toInt(1);
+    m_paddingPx = qBound(0, raw.value(QStringLiteral("padding_px")).toInt(12), 60);
     m_opacityPct = raw.value(QStringLiteral("opacity_pct")).toInt(90);
     m_fontFamily = raw.value(QStringLiteral("font_family")).toString(QStringLiteral("Microsoft YaHei"));
     m_fontSize = raw.value(QStringLiteral("font_size")).toInt(10);
@@ -158,6 +159,7 @@ void FloatWindow::applyConfig(const QJsonObject& raw) {
                   bg.value(QStringLiteral("b")).toInt(0), bg.value(QStringLiteral("a")).toInt(191));
 
     m_font = QFont(m_fontFamily, qBound(8, m_fontSize, 15));
+    m_vbox->setContentsMargins(m_paddingPx, m_paddingPx, m_paddingPx, m_paddingPx);
     m_table->setFont(m_font);
     m_table->horizontalHeader()->setFont(m_font);
     m_table->horizontalHeader()->setVisible(m_headerVisible);
@@ -273,6 +275,7 @@ QJsonObject FloatWindow::currentConfig() const {
     cfg[QStringLiteral("grid_visible")] = m_gridVisible;
     cfg[QStringLiteral("default_color")] = m_defaultColor;
     cfg[QStringLiteral("line_extra_px")] = m_lineExtraPx;
+    cfg[QStringLiteral("padding_px")] = m_paddingPx;
     cfg[QStringLiteral("opacity_pct")] = int(qRound(windowOpacity() * 100));
     cfg[QStringLiteral("font_family")] = m_fontFamily;
     cfg[QStringLiteral("font_size")] = m_fontSize;
