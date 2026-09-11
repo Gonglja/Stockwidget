@@ -109,16 +109,18 @@ FloatWindow::FloatWindow(const QJsonObject& cfg, QWidget* parent) : QWidget(pare
     m_timer->start(m_refreshSeconds * 1000);
     m_scheduleTimer->start();
 
-    const QRect scr = QApplication::primaryScreen()->availableGeometry();
-    const QJsonObject pos = cfg.value(QStringLiteral("pos")).toObject();
-    if (pos.contains(QStringLiteral("x")) && pos.contains(QStringLiteral("y"))) {
-        const int x = qBound(scr.left(), pos.value(QStringLiteral("x")).toInt(),
-                             scr.right() - width());
-        const int y = qBound(scr.top(), pos.value(QStringLiteral("y")).toInt(),
-                             scr.bottom() - height());
-        move(x, y);
-    } else {
-        move(scr.right() - width() - 40, scr.bottom() - height() - 80);
+    if (QScreen* primary = QApplication::primaryScreen()) {
+        const QRect scr = primary->availableGeometry();
+        const QJsonObject pos = cfg.value(QStringLiteral("pos")).toObject();
+        if (pos.contains(QStringLiteral("x")) && pos.contains(QStringLiteral("y"))) {
+            const int x = qBound(scr.left(), pos.value(QStringLiteral("x")).toInt(),
+                                 scr.right() - width());
+            const int y = qBound(scr.top(), pos.value(QStringLiteral("y")).toInt(),
+                                 scr.bottom() - height());
+            move(x, y);
+        } else {
+            move(scr.right() - width() - 40, scr.bottom() - height() - 80);
+        }
     }
 
     refreshNow();
