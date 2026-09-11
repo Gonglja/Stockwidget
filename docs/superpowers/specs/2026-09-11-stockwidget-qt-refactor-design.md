@@ -132,6 +132,11 @@ QTimer(刷新间隔) ──► FloatWindow
   - 请求时段：`always` / `market` / `custom`。
   - 显示：20s 调度定时器，仅在**跨越时段边界**时切换（进入→`show()`，离开→`hide()`），不打断手动隐藏。
   - 请求：非请求时段 `refreshNow()` 直接跳过，保留上次数据。
+- **贴边隐藏**（`edge_hide`，默认关）：
+  - 150ms 轮询鼠标位置；离开 400ms 后就吸到最近屏幕边（左/右/上/下）并滑出，仅留 4px 可见细条。
+  - 鼠标回到细条上（光标重新处于窗口矩形内）即恢复至贴边位置；菜单弹出时不收起。
+  - 开启时禁用单击隐藏，避免冲突；从托盘/快捷键重新显示时不会停在收起位置。
+  - 持久化的是**贴边位置**而非收起位置。
 - **自选管理**：增/删/改/上移/下移 + 勾选显示（`checked_codes`）；代码规格化去重规则：
   - `sh|sz|bj` + 数字 → 直接接受
   - `6`/`90`/`5` 开头 → `sh`；`0`/`1`/`2`/`3` 开头 → `sz`；`4`/`8`/`92` 开头 → `bj`
@@ -154,7 +159,7 @@ QTimer(刷新间隔) ──► FloatWindow
   - `visible_codes` → `checked_codes`
 - **写回新规范 schema**，原子写（`QSaveFile`），一次性完成迁移。
 
-规范 schema 键（与现有 `current_config()` 对齐）：`codes, checked_codes, code_visible, name_visible, price_visible, change_visible, change_pct_visible, b1s1_visible, commi_visible, vol_visible, amount_visible, avg_visible, kline_visible, short_code, name_length, b1s1_price, b1s1_display, header_visible, grid_visible, refresh_seconds, fg, bg{r,g,b,a}, opacity_pct, font_family, font_size, line_extra_px, default_color, pos{x,y}, hotkey, start_on_boot, app_icon, show_mode, show_start, show_end, fetch_mode, fetch_start, fetch_end`。
+规范 schema 键（与现有 `current_config()` 对齐）：`codes, checked_codes, code_visible, name_visible, price_visible, change_visible, change_pct_visible, b1s1_visible, commi_visible, vol_visible, amount_visible, avg_visible, kline_visible, short_code, name_length, b1s1_price, b1s1_display, header_visible, grid_visible, refresh_seconds, fg, bg{r,g,b,a}, opacity_pct, font_family, font_size, line_extra_px, default_color, pos{x,y}, hotkey, start_on_boot, app_icon, show_mode, show_start, show_end, fetch_mode, fetch_start, fetch_end, edge_hide`。
 
 ---
 

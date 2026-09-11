@@ -9,7 +9,10 @@
 #include <QAction>
 #include <QApplication>
 #include <QContextMenuEvent>
+#include <QCursor>
 #include <QDate>
+#include <QDateTime>
+#include <QEnterEvent>
 #include <QFrame>
 #include <QHeaderView>
 #include <QJsonArray>
@@ -24,6 +27,9 @@
 #include <QVBoxLayout>
 
 namespace {
+
+// 贴边隐藏后，留在屏幕边缘的可见细条宽度（px）。
+constexpr int kEdgeHandlePx = 4;
 
 QString b1s1ToString(QuoteFormatOptions::B1S1Display d) {
     switch (d) {
@@ -93,6 +99,11 @@ FloatWindow::FloatWindow(const QJsonObject& cfg, QWidget* parent) : QWidget(pare
     m_scheduleTimer = new QTimer(this);
     m_scheduleTimer->setInterval(20000);
     connect(m_scheduleTimer, &QTimer::timeout, this, &FloatWindow::evaluateSchedule);
+
+    // 贴边隐藏：轮询鼠标位置，离开 400ms 后收起，划过边缘细条时恢复。
+    m_edgeTimer = new QTimer(this);
+    m_edgeTimer->setInterval(150);
+    connect(m_edgeTimer, &QTimer::timeout, this, &FloatWindow::checkEdgeHover);
 
     applyConfig(cfg);
     m_timer->start(m_refreshSeconds * 1000);
@@ -166,6 +177,15 @@ void FloatWindow::applyConfig(const QJsonObject& raw) {
     m_fetchMode = raw.value(QStringLiteral("fetch_mode")).toString(QStringLiteral("always"));
     m_fetchStart = raw.value(QStringLiteral("fetch_start")).toString(QStringLiteral("09:15"));
     m_fetchEnd = raw.value(QStringLiteral("fetch_end")).toString(QStringLiteral("15:00"));
+    const bool edgeHide = raw.value(QStringLiteral("edge_hide")).toBool(false);
+    if (m_edgeHide && !edgeHide) restoreFromEdge();
+    m_edgeHide = edgeHide;
+    if (m_edgeHide) {
+        if (!m_edgeTimer->isActive()) m_edgeTimer->start();
+    } else {
+        m_edgeTimer->stop();
+        m_outsideSince = 0;
+    }
 
     m_fg = QColor(raw.value(QStringLiteral("fg")).toString(QStringLiteral("#FFFFFF")));
     const QJsonObject bg = raw.value(QStringLiteral("bg")).toObject();
@@ -290,6 +310,74 @@ void FloatWindow::refitSize() {
     resize(m_panel->size());
 }
 
+void FloatWindow::enterEvent(QEnterEvent* event) {
+    QWidget::enterEvent(event);
+    if (m_edgeHide) restoreFromEdge();
+}
+
+void FloatWindow::checkEdgeHover() {
+    if (!m_edgeHide || !isVisible() || m_dragging || QApplication::activePopupWidget()) {
+        m_outsideSince = 0;
+        return;
+    }
+    if (rect().contains(mapFromGlobal(QCursor::pos()))) {
+        m_outsideSince = 0;
+        restoreFromEdge();
+        return;
+    }
+    if (m_collapsed) return;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (m_outsideSince == 0) {
+        m_outsideSince = now;
+        return;
+    }
+    if (now - m_outsideSince >= 400) {
+        m_outsideSince = 0;
+        collapseToEdge();
+    }
+}
+
+void FloatWindow::collapseToEdge() {
+    QScreen* scr = screen() ? screen() : QApplication::primaryScreen();
+    if (!scr) return;
+    const QRect g = scr->availableGeometry();
+    const QRect w = frameGeometry();
+    if (w.width() <= 0 || w.height() <= 0) return;
+
+    const int cx = w.center().x(), cy = w.center().y();
+    const int dLeft = cx - g.left(), dRight = g.right() - cx;
+    const int dTop = cy - g.top(), dBottom = g.bottom() - cy;
+    const int nearest = qMin(qMin(dLeft, dRight), qMin(dTop, dBottom));
+
+    QPoint flush = w.topLeft();
+    QPoint hidden = w.topLeft();
+    if (nearest == dLeft) {
+        flush.setX(g.left());
+        hidden.setX(g.left() - w.width() + kEdgeHandlePx);
+    } else if (nearest == dRight) {
+        flush.setX(g.right() - w.width() + 1);
+        hidden.setX(g.right() - kEdgeHandlePx + 1);
+    } else if (nearest == dTop) {
+        flush.setY(g.top());
+        hidden.setY(g.top() - w.height() + kEdgeHandlePx);
+    } else {
+        flush.setY(g.bottom() - w.height() + 1);
+        hidden.setY(g.bottom() - kEdgeHandlePx + 1);
+    }
+    flush.setX(qBound(g.left(), flush.x(), qMax(g.left(), g.right() - w.width() + 1)));
+    flush.setY(qBound(g.top(), flush.y(), qMax(g.top(), g.bottom() - w.height() + 1)));
+
+    m_flushPos = flush;
+    move(hidden);
+    m_collapsed = true;
+}
+
+void FloatWindow::restoreFromEdge() {
+    if (!m_collapsed) return;
+    m_collapsed = false;
+    move(m_flushPos);
+}
+
 void FloatWindow::paintEvent(QPaintEvent*) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing, true);
@@ -325,6 +413,7 @@ QJsonObject FloatWindow::currentConfig() const {
     cfg[QStringLiteral("fetch_mode")] = m_fetchMode;
     cfg[QStringLiteral("fetch_start")] = m_fetchStart;
     cfg[QStringLiteral("fetch_end")] = m_fetchEnd;
+    cfg[QStringLiteral("edge_hide")] = m_edgeHide;
     cfg[QStringLiteral("fg")] = m_fg.name(QColor::HexRgb);
     QJsonObject bg;
     bg[QStringLiteral("r")] = m_bg.red();
@@ -333,8 +422,9 @@ QJsonObject FloatWindow::currentConfig() const {
     bg[QStringLiteral("a")] = m_bg.alpha();
     cfg[QStringLiteral("bg")] = bg;
     QJsonObject pos;
-    pos[QStringLiteral("x")] = x();
-    pos[QStringLiteral("y")] = y();
+    const QPoint saved = m_collapsed ? m_flushPos : QPoint(x(), y());
+    pos[QStringLiteral("x")] = saved.x();
+    pos[QStringLiteral("y")] = saved.y();
     cfg[QStringLiteral("pos")] = pos;
     return cfg;
 }
@@ -365,8 +455,8 @@ void FloatWindow::mouseReleaseEvent(QMouseEvent* e) {
         m_dragging = false;
         if (m_dragMoved)
             persistGeometry();
-        else
-            hide();  // 单击（非拖动）隐藏
+        else if (!m_edgeHide)
+            hide();  // 单击（非拖动）隐藏；开启贴边隐藏时不隐藏
         e->accept();
     }
 }
@@ -411,8 +501,8 @@ bool FloatWindow::eventFilter(QObject* obj, QEvent* event) {
             m_dragging = false;
             if (m_dragMoved)
                 persistGeometry();
-            else
-                hide();  // 单击（非拖动）隐藏
+            else if (!m_edgeHide)
+                hide();  // 单击（非拖动）隐藏；开启贴边隐藏时不隐藏
             return true;
         }
     } else if (event->type() == QEvent::ContextMenu) {
@@ -507,6 +597,7 @@ void FloatWindow::showEvent(QShowEvent* event) {
         hide();
         return;
     }
+    restoreFromEdge();  // 从托盘/快捷键重新显示时，不要在收起位置
     if (!m_timer->isActive()) m_timer->start(m_refreshSeconds * 1000);
     refreshNow();
 }

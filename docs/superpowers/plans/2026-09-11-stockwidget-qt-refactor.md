@@ -2901,6 +2901,12 @@ git commit -m "build: windeployqt 打包脚本"
    - 显示：20s 调度定时器（不随隐藏停止），仅跨边界时 show/hide；`showEvent` 在非时段内立即隐藏。
    - 请求：`refreshNow()` 在非请求时段直接返回。
    - UI：设置 → 常规页新增「显示时段」「请求时段」两行（下拉 + 起止 `QTimeEdit`，非 custom 时禁用）。
+7. **新增「贴边隐藏（鼠标划过显示）」**（`edge_hide`，默认关）。
+   - 150ms 轮询 `QCursor::pos()`（不用 Enter/Leave：子控件切换会误报，且光标从未进入窗口时收不到 Leave）；离开 400ms 后就吸到最近屏幕边并滑出，仅留 4px 细条。
+   - 光标准回细条（`rect().contains(mapFromGlobal(pos))`）即 `restoreFromEdge()`；右键菜单弹出时不收起。
+   - 开启时禁用单击隐藏；`showEvent` 先 `restoreFromEdge()`，避免从托盘/快捷键显示时停在收起位置；`pos` 持久化贴边位置而非收起位置。
+   - 验证：`SendInput`/`SetCursorPos` 真实鼠标→ 收起 `x=2872`（物理右边缘）→ 划过细条→ `x=1323`（贴边）恢复。
+   - 踩坑：该 HiDPI 环境下 `move()` 用**逻辑**坐标，而 `w.x()` 上报**物理**像素（dpr=2）；探针一度误判“未收起”，实际行为正确。
 
 ### 诊断方法（可复现）
 

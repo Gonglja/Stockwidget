@@ -30,6 +30,7 @@ signals:
 
 protected:
     void paintEvent(QPaintEvent* event) override;
+    void enterEvent(QEnterEvent* event) override;
     bool eventFilter(QObject* obj, QEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
@@ -49,6 +50,9 @@ private:
     void persistGeometry();
     void setHeaderFlag(const QString& header, bool on);
     void showContextMenu(const QPoint& globalPos);
+    void collapseToEdge();
+    void restoreFromEdge();
+    void checkEdgeHover();
     bool inShowWindow() const;
     bool inFetchWindow() const;
     void evaluateSchedule();
@@ -95,7 +99,12 @@ private:
     SinaQuoteSource* m_source = nullptr;
     QTimer* m_timer = nullptr;
     QTimer* m_scheduleTimer = nullptr;
+    QTimer* m_edgeTimer = nullptr;
     bool m_wasInShowWindow = false;
+    bool m_edgeHide = false;
+    bool m_collapsed = false;
+    qint64 m_outsideSince = 0;
+    QPoint m_flushPos;
 
     bool m_dragging = false;
     bool m_dragMoved = false;

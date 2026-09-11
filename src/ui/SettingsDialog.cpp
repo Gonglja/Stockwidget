@@ -298,6 +298,15 @@ QWidget* SettingsDialog::buildGeneralTab() {
     startOnBoot->setChecked(cfg.value(QStringLiteral("start_on_boot")).toBool(false));
     lay->addWidget(startOnBoot);
 
+    auto* edgeHide = new QCheckBox(QStringLiteral("贴边隐藏（鼠标划过显示）"), page);
+    edgeHide->setChecked(cfg.value(QStringLiteral("edge_hide")).toBool(false));
+    lay->addWidget(edgeHide);
+    connect(edgeHide, &QCheckBox::toggled, this, [this](bool on) {
+        QJsonObject c = m_win->currentConfig();
+        c[QStringLiteral("edge_hide")] = on;
+        m_win->applyConfig(c);
+    });
+
     auto makeScheduleRow = [&](const QString& title, const QString& modeKey, const QString& startKey,
                                const QString& endKey, QComboBox*& modeOut, QTimeEdit*& startOut,
                                QTimeEdit*& endOut) -> QWidget* {
