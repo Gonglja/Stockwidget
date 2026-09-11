@@ -25,6 +25,10 @@ static QJsonObject baseConfig() {
     cfg["price_visible"] = true;
     cfg["change_pct_visible"] = true;
     cfg["header_visible"] = false;
+    // 测试保持离线/快速：默认不在请求时段，FloatWindow 不发起网络请求。
+    cfg["fetch_mode"] = "custom";
+    cfg["fetch_start"] = "00:00";
+    cfg["fetch_end"] = "00:00";
     return cfg;
 }
 

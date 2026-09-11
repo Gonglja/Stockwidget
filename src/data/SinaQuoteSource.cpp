@@ -13,23 +13,24 @@ void SinaQuoteSource::fetch(const QStringList& codes) {
         emit error(QStringLiteral("暂无数据，请添加自选"));
         return;
     }
-    if (m_reply) {
-        m_reply->abort();
-        m_reply->deleteLater();
-        m_reply = nullptr;
-    }
+    // 上一个请求仍在进行则跳过本次（不 cancel，避免慢网络下永远拉不到数据，
+    // 也避免请求重叠导致的 reply 生命周期错乱）。
+    if (m_reply) return;
 
-    QNetworkRequest req(QUrl(QStringLiteral("https://hq.sinajs.cn/list=") +
-                             codes.join(QLatin1Char(','))));
+    QNetworkRequest req{QUrl(QStringLiteral("https://hq.sinajs.cn/list=") +
+                            codes.join(QLatin1Char(',')))};
     req.setRawHeader("Referer", "https://finance.sina.com.cn");
     req.setRawHeader("User-Agent", "Mozilla/5.0");
     req.setTransferTimeout(3000);
 
-    m_reply = m_nam.get(req);
-    connect(m_reply, &QNetworkReply::finished, this, [this] {
-        QNetworkReply* reply = m_reply;
-        m_reply = nullptr;
+    QNetworkReply* reply = m_nam.get(req);
+    m_reply = reply;
+    // 必须捕获 reply 本身，不能读共享成员 m_reply：
+    // 否则并发/重叠时会把别的 reply 置空并 deleteLater(nullptr) -> 崩溃。
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        if (m_reply == reply) m_reply = nullptr;
         reply->deleteLater();
+        if (reply->error() == QNetworkReply::OperationCanceledError) return;
         if (reply->error() != QNetworkReply::NoError) {
             emit error(QStringLiteral("无网络连接"));
             return;

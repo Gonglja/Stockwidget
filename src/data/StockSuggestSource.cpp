@@ -36,11 +36,8 @@ void StockSuggestSource::query(const QString& keyword) {
         emit suggestionsReady({});
         return;
     }
-    if (m_reply) {
-        m_reply->abort();
-        m_reply->deleteLater();
-        m_reply = nullptr;
-    }
+    // 上一个请求仍在进行则跳过本次（避免重叠导致 reply 生命周期错乱）。
+    if (m_reply) return;
 
     // 新浪 suggest 的 key 需要 UTF-8 百分号编码（实测：GBK 会返回通用列表）。
     // 用 QUrl::fromEncoded 构造，避免 QUrl 对 '%' 二次编码。
@@ -53,11 +50,13 @@ void StockSuggestSource::query(const QString& keyword) {
     req.setRawHeader("User-Agent", "Mozilla/5.0");
     req.setTransferTimeout(3000);
 
-    m_reply = m_nam.get(req);
-    connect(m_reply, &QNetworkReply::finished, this, [this] {
-        QNetworkReply* reply = m_reply;
-        m_reply = nullptr;
+    QNetworkReply* reply = m_nam.get(req);
+    m_reply = reply;
+    // 捕获 reply 本身，不能读共享成员 m_reply（否则会 deleteLater(nullptr) 崩溃）。
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        if (m_reply == reply) m_reply = nullptr;
         reply->deleteLater();
+        if (reply->error() == QNetworkReply::OperationCanceledError) return;
         if (reply->error() != QNetworkReply::NoError) {
             emit error(QStringLiteral("查询失败"));
             return;
