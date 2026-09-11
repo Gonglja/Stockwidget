@@ -6,12 +6,15 @@ class FloatWindow;
 class QCheckBox;
 class QComboBox;
 class QKeySequenceEdit;
+class QLineEdit;
 class QListWidget;
 class QListWidgetItem;
 class QPushButton;
 class QSlider;
 class QTimeEdit;
+class QTimer;
 class QTabWidget;
+class StockSuggestSource;
 
 class SettingsDialog : public QDialog {
     Q_OBJECT
@@ -52,5 +55,9 @@ private:
     QComboBox* m_fetchMode = nullptr;
     QTimeEdit* m_fetchStart = nullptr;
     QTimeEdit* m_fetchEnd = nullptr;
+    QLineEdit* m_searchEdit = nullptr;
+    QListWidget* m_suggestList = nullptr;
+    QTimer* m_suggestDebounce = nullptr;
+    StockSuggestSource* m_suggest = nullptr;
     int m_builtTabs = 0;
 };

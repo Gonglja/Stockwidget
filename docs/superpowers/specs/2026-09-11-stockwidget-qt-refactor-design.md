@@ -80,6 +80,7 @@ StockWidget/
 | `QuoteParser` | 纯解析，无 IO，可单测 | `static QVector<Quote> parseText(const QString&)`（GBK 解码在 SinaQuoteSource） |
 | `StockCode` | 代码规格化/去重，纯函数，可单测 | `static std::optional<QString> normalize(QString)` |
 | `SinaQuoteSource` | 异步请求 + 超时 + GBK 解码 | `void fetch(QStringList codes)`；信号 `quotesReady(QVector<Quote>)` / `error(QString)` |
+| `StockSuggestSource` | 名称/代码模糊联想（新浪 suggest3） | `void query(QString keyword)`；信号 `suggestionsReady(QVector<StockSuggestion>)` |
 | `QuoteModel` | 持有数据与列配置，增量 diff | `setQuotes()` / `setColumns()` → `dataChanged` / `layoutChanged` |
 | `KLineDelegate` | 绘制当日 K 线 | `paint()` |
 | `FloatWindow` | 浮窗交互与渲染，组合以上组件 | 设置 setter + `currentConfig()` |
@@ -141,7 +142,7 @@ QTimer(刷新间隔) ──► FloatWindow
   - 持久化的是**贴边位置**而非收起位置。
   - **宽限期**：每次 `show()` 后 3s 内不自动收起，避免“刚显示就消失”。
 - **定位浮窗**（`FloatWindow::locate()`，托盘右键菜单）：移到屏幕居中 + `restoreFromEdge()` + 强制显示 10s（绕过显示时段），用于找回丢失/被收起的窗口。
-- **自选管理**：增/删/改/上移/下移 + 勾选显示（`checked_codes`）；代码规格化去重规则：
+- **自选管理**：增/删/改/上移/下移 + 勾选显示（`checked_codes`）；顶部搜索框支持直接输入代码（可不带前缀）与名称/片段模糊搜索（新浪 `suggest3` 联想，UTF-8 编码 key，GBK 解码响应）；代码规格化去重规则：
   - `sh|sz|bj` + 数字 → 直接接受
   - `6`/`90`/`5` 开头 → `sh`；`0`/`1`/`2`/`3` 开头 → `sz`；`4`/`8`/`92` 开头 → `bj`
   - 非法输入回退到上次有效值

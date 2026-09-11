@@ -1,6 +1,7 @@
 #include "ui/SettingsDialog.h"
 #include "data/QuoteColumns.h"
 #include "data/StockCode.h"
+#include "data/StockSuggestSource.h"
 #include "ui/FloatWindow.h"
 
 #include <QCheckBox>
@@ -16,11 +17,13 @@
 #include <QKeySequenceEdit>
 #include <QLabel>
 #include <QListWidget>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QSlider>
 #include <QTabWidget>
 #include <QTime>
 #include <QTimeEdit>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <functional>
 
@@ -74,7 +77,25 @@ QWidget* SettingsDialog::buildCodesTab() {
     auto* page = new QWidget();
     auto* lay = new QVBoxLayout(page);
     auto* group = new QGroupBox(QStringLiteral("自选列表"), page);
-    auto* h = new QHBoxLayout(group);
+    auto* outer = new QVBoxLayout(group);
+
+    // 搜索行：输入代码（可不带前缀）或名称模糊搜索
+    auto* searchRow = new QHBoxLayout();
+    m_searchEdit = new QLineEdit(group);
+    m_searchEdit->setPlaceholderText(QStringLiteral("输入代码（可不带前缀）或名称模糊搜索…"));
+    auto* btnAddSearch = new QPushButton(QStringLiteral("添加"), group);
+    btnAddSearch->setFixedWidth(60);
+    searchRow->addWidget(m_searchEdit, 1);
+    searchRow->addWidget(btnAddSearch);
+    outer->addLayout(searchRow);
+
+    // 联想结果（选中即加入）
+    m_suggestList = new QListWidget(group);
+    m_suggestList->setMaximumHeight(120);
+    m_suggestList->setVisible(false);
+    outer->addWidget(m_suggestList);
+
+    auto* h = new QHBoxLayout();
     m_codeList = new QListWidget(group);
     m_codeList->setFixedWidth(150);
 
@@ -101,6 +122,82 @@ QWidget* SettingsDialog::buildCodesTab() {
         c[QStringLiteral("checked_codes")] = QJsonArray::fromStringList(checkedList);
         m_win->applyConfig(c);
     };
+    auto addCode = [this, commit](const QString& codeIn) -> bool {
+        const auto n = StockCode::normalize(codeIn);
+        if (!n) return false;
+        for (int i = 0; i < m_codeList->count(); ++i) {
+            if (m_codeList->item(i)->text() == *n) {
+                m_codeList->item(i)->setCheckState(Qt::Checked);
+                m_codeList->setCurrentRow(i);
+                commit();
+                return true;
+            }
+        }
+        auto* it = new QListWidgetItem(*n, m_codeList);
+        it->setFlags(it->flags() | Qt::ItemIsUserCheckable | Qt::ItemIsEditable);
+        it->setCheckState(Qt::Checked);
+        m_codeList->setCurrentItem(it);
+        commit();
+        return true;
+    };
+    auto submitSearch = [this, addCode] {
+        const QString text = m_searchEdit->text();
+        bool ok = false;
+        if (StockCode::normalize(text)) {
+            ok = addCode(text);
+        } else {
+            const QListWidgetItem* sel = m_suggestList->currentItem();
+            if (!sel && m_suggestList->count() > 0) sel = m_suggestList->item(0);
+            if (sel) ok = addCode(sel->data(Qt::UserRole).toString());
+        }
+        if (ok) {
+            m_searchEdit->clear();
+            m_suggestList->clear();
+            m_suggestList->setVisible(false);
+        }
+    };
+
+    m_suggest = new StockSuggestSource(this);
+    m_suggestDebounce = new QTimer(this);
+    m_suggestDebounce->setSingleShot(true);
+    m_suggestDebounce->setInterval(300);
+    connect(m_suggestDebounce, &QTimer::timeout, this,
+            [this] { m_suggest->query(m_searchEdit->text()); });
+    connect(m_searchEdit, &QLineEdit::textEdited, this, [this](const QString& t) {
+        m_suggestDebounce->stop();
+        if (t.trimmed().isEmpty() || StockCode::normalize(t)) {
+            m_suggestList->clear();
+            m_suggestList->setVisible(false);
+            return;
+        }
+        m_suggestDebounce->start();
+    });
+    connect(m_suggest, &StockSuggestSource::suggestionsReady, this,
+            [this](const QVector<StockSuggestion>& items) {
+                m_suggestList->clear();
+                for (const StockSuggestion& s : items) {
+                    auto* it = new QListWidgetItem(
+                        QStringLiteral("%1  %2").arg(s.name, s.code), m_suggestList);
+                    it->setData(Qt::UserRole, s.code);
+                }
+                m_suggestList->setVisible(!items.isEmpty());
+                if (items.size() > 0) m_suggestList->setCurrentRow(0);
+            });
+    connect(m_suggest, &StockSuggestSource::error, this, [this](const QString&) {
+        m_suggestList->clear();
+        m_suggestList->setVisible(false);
+    });
+    connect(m_searchEdit, &QLineEdit::returnPressed, this, [submitSearch] { submitSearch(); });
+    connect(btnAddSearch, &QPushButton::clicked, this, [submitSearch] { submitSearch(); });
+    connect(m_suggestList, &QListWidget::itemActivated, this,
+            [this, addCode](QListWidgetItem* it) {
+                if (!it) return;
+                if (addCode(it->data(Qt::UserRole).toString())) {
+                    m_searchEdit->clear();
+                    m_suggestList->clear();
+                    m_suggestList->setVisible(false);
+                }
+            });
 
     auto* btnCol = new QVBoxLayout();
     auto addBtn = [&](const QString& text, std::function<void()> fn) {
@@ -109,14 +206,6 @@ QWidget* SettingsDialog::buildCodesTab() {
         connect(b, &QPushButton::clicked, this, fn);
         btnCol->addWidget(b);
     };
-    addBtn(QStringLiteral("添加"), [this, commit] {
-        auto* it = new QListWidgetItem(QStringLiteral("sh000001"), m_codeList);
-        it->setFlags(it->flags() | Qt::ItemIsUserCheckable | Qt::ItemIsEditable);
-        it->setCheckState(Qt::Unchecked);
-        m_codeList->setCurrentItem(it);
-        m_codeList->editItem(it);
-        commit();
-    });
     addBtn(QStringLiteral("删除"), [this, commit] {
         delete m_codeList->takeItem(m_codeList->currentRow());
         commit();
@@ -143,6 +232,7 @@ QWidget* SettingsDialog::buildCodesTab() {
 
     h->addWidget(m_codeList, 1);
     h->addLayout(btnCol);
+    outer->addLayout(h, 1);
     lay->addWidget(group);
     connect(m_codeList, &QListWidget::itemChanged, this, [commit](QListWidgetItem*) { commit(); });
     return page;

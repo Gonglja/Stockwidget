@@ -13,6 +13,7 @@ add_library(StockWidgetCore STATIC
     src/data/QuoteColumns.cpp
     src/data/QuoteParser.cpp
     src/data/SinaQuoteSource.cpp
+    src/data/StockSuggestSource.cpp
     src/app/ConfigStore.cpp
     src/ui/QuoteModel.cpp
 )

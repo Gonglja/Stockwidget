@@ -2916,6 +2916,11 @@ git commit -m "build: windeployqt 打包脚本"
    - 修复：不再用 `setWindowOpacity()`（会将 alpha 乘向 0），改为把整体不透明度**烘入颜色 alpha**；绘制背景时 alpha 钳制到 **≥1**。修复后同样配置命中 **6/6**。
    - “整体不透明度”同时应用于文字色与 K 线的涨/跌/中性色（`QuoteModel`/`KLineDelegate` 新增 `opacity` 参数）。
    - 回归测试：`test_ui::transparentBackgroundStillHitTestable`（断言 `windowOpacity()==1` 且抓图背景 alpha ≥1）。
+10. **新增自选搜索：输入代码（可不带前缀）/ 名称模糊查询**。
+   - 新增 `data/StockSuggestSource`（新浪 `suggest3.sinajs.cn`）+ 纯函数 `SuggestParser::parseSuggest`（可单测）。
+   - 字段格式：`[0]名称或带前缀代码,[1]类型,[2]代码,[3]带前缀代码,[4]名称,...`——**名称取 [4]、代码取 [3]**（对单结果/多结果两种响应都成立）。
+   - 踩坑：①接口 key 需 **UTF-8** 百分号编码，GBK 会返回通用列表；②必须用 `QUrl::fromEncoded` 避免二次编码；③`QRegularExpression("...\d{6}$")` 不可写成单反斜杠。
+   - UI：设置 → 自选列表顶部搜索框，300ms 防抖，下拉结果点选/回车加入并勾选；纯数字/带前缀代码仍可直接添加。
 
 ### 诊断方法（可复现）
 
