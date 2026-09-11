@@ -1,0 +1,93 @@
+#pragma once
+#include "data/Quote.h"
+#include <QColor>
+#include <QFont>
+#include <QJsonObject>
+#include <QStringList>
+#include <QWidget>
+#include <functional>
+
+class QLabel;
+class QTableView;
+class QTimer;
+class QuoteModel;
+class KLineDelegate;
+class SinaQuoteSource;
+
+class FloatWindow : public QWidget {
+    Q_OBJECT
+public:
+    explicit FloatWindow(const QJsonObject& cfg, QWidget* parent = nullptr);
+
+    QJsonObject currentConfig() const;
+    void applyConfig(const QJsonObject& cfg);
+    void setOpenSettingsCallback(std::function<void()> cb) { m_openSettings = std::move(cb); }
+    void stop();
+
+signals:
+    void configChanged();
+
+protected:
+    void paintEvent(QPaintEvent* event) override;
+    bool eventFilter(QObject* obj, QEvent* event) override;
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
+    void mouseDoubleClickEvent(QMouseEvent* event) override;
+    void contextMenuEvent(QContextMenuEvent* event) override;
+    void showEvent(QShowEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
+
+private:
+    void applyStyle();
+    void applyFontAndMetrics();
+    void rebuildColumns();
+    void refreshNow();
+    void refitSize();
+    void notifyChanged();
+    void persistGeometry();
+    void setHeaderFlag(const QString& header, bool on);
+    void showContextMenu(const QPoint& globalPos);
+    void onQuotesReady(const QVector<Quote>& quotes);
+    QString layoutSignature() const;
+
+    // 配置状态
+    QStringList m_codes;
+    QStringList m_checkedCodes;
+    int m_refreshSeconds = 2;
+    bool m_shortCode = false;
+    int m_nameLength = 0;
+    QuoteFormatOptions::B1S1Display m_b1s1 = QuoteFormatOptions::B1S1Display::Qty;
+    bool m_headerVisible = false;
+    bool m_gridVisible = false;
+    bool m_defaultColor = false;
+    int m_lineExtraPx = 1;
+    int m_opacityPct = 90;
+    QString m_fontFamily = QStringLiteral("Microsoft YaHei");
+    int m_fontSize = 10;
+    QString m_hotkey = QStringLiteral("Ctrl+Alt+F");
+    bool m_startOnBoot = false;
+    QString m_appIcon;
+    QJsonObject m_columnCfg;
+    QString m_layoutSig;
+
+    QColor m_fg = QColor(QStringLiteral("#FFFFFF"));
+    QColor m_bg = QColor(0, 0, 0, 191);
+    QFont m_font;
+
+    // UI
+    QWidget* m_panel = nullptr;
+    QTableView* m_table = nullptr;
+    QLabel* m_errorLabel = nullptr;
+    QuoteModel* m_model = nullptr;
+    KLineDelegate* m_klineDelegate = nullptr;
+    SinaQuoteSource* m_source = nullptr;
+    QTimer* m_timer = nullptr;
+
+    bool m_dragging = false;
+    bool m_dragMoved = false;
+    QPoint m_pressGlobalPos;
+    QPoint m_dragOffset;
+    std::function<void()> m_openSettings;
+    bool m_columnWidthsFrozen = false;
+};
