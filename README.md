@@ -87,7 +87,7 @@ git push origin v1.5.0
 
 流程见 `.github/workflows/release.yml`：
 
-1. 安装 Qt **6.11.1**（`msvc2022_64` + `qt5compat`）
+1. 安装 Qt **6.8.3 LTS**（`msvc2022_64` + `qt5compat`）
 2. `scripts\build.cmd` 构建
 3. `scripts\test.cmd` 跑全部测试
 4. `scripts\package.cmd` 用 `windeployqt` 打包
@@ -95,6 +95,9 @@ git push origin v1.5.0
 
 也可在 Actions 页**手动触发**（`workflow_dispatch`，只出 artifact、不建 Release）。
 CI 通过环境变量 `QT_DIR` 指定 Qt 路径；MSVC 环境由 `scripts\_vcvars.cmd` 经 `vswhere` 自动定位。
+
+> **为什么 CI 用 6.8.3 而不是 6.11.1：** aqtinstall 目前无法安装 6.11.x —— 官方源 `qt6_6111` 分支的顶层 `Updates.xml` 缺失（404），而 6.10.3 / 6.8.3 正常。
+> 本项目 `find_package(Qt6 6.8)`，本机已用 **6.8.3 完整构建 + 7/7 测试通过**验证。本机脚本默认仍是 6.11.1（可用 `QT_DIR` 切换）。
 
 ---
 
