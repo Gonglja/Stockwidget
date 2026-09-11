@@ -46,6 +46,7 @@ private:
     QComboBox* m_interval = nullptr;
     QComboBox* m_icon = nullptr;
     QComboBox* m_showMode = nullptr;
+    QComboBox* m_edgeSide = nullptr;
     QTimeEdit* m_showStart = nullptr;
     QTimeEdit* m_showEnd = nullptr;
     QComboBox* m_fetchMode = nullptr;

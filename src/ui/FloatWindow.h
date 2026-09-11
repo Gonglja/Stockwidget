@@ -105,6 +105,7 @@ private:
     QTimer* m_edgeTimer = nullptr;
     bool m_wasInShowWindow = false;
     bool m_edgeHide = false;
+    QString m_edgeSide = QStringLiteral("auto");
     bool m_collapsed = false;
     qint64 m_outsideSince = 0;
     qint64 m_edgeGraceUntil = 0;

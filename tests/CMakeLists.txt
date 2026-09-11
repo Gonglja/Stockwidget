@@ -26,3 +26,4 @@ qt_add_executable(test_ui test_ui.cpp
 target_include_directories(test_ui PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_ui PRIVATE Qt6::Test Qt6::Widgets StockWidgetCore)
 add_test(NAME test_ui COMMAND test_ui)
+

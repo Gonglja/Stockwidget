@@ -298,12 +298,33 @@ QWidget* SettingsDialog::buildGeneralTab() {
     startOnBoot->setChecked(cfg.value(QStringLiteral("start_on_boot")).toBool(false));
     lay->addWidget(startOnBoot);
 
-    auto* edgeHide = new QCheckBox(QStringLiteral("贴边隐藏（鼠标划过显示）"), page);
+    auto* edgeRow = new QWidget(page);
+    auto* edgeLay = new QHBoxLayout(edgeRow);
+    auto* edgeHide = new QCheckBox(QStringLiteral("贴边隐藏（鼠标划过显示）"), edgeRow);
     edgeHide->setChecked(cfg.value(QStringLiteral("edge_hide")).toBool(false));
-    lay->addWidget(edgeHide);
+    m_edgeSide = new QComboBox(edgeRow);
+    m_edgeSide->addItem(QStringLiteral("方向：自动（就近）"), QStringLiteral("auto"));
+    m_edgeSide->addItem(QStringLiteral("方向：左"), QStringLiteral("left"));
+    m_edgeSide->addItem(QStringLiteral("方向：右"), QStringLiteral("right"));
+    m_edgeSide->addItem(QStringLiteral("方向：上"), QStringLiteral("top"));
+    m_edgeSide->addItem(QStringLiteral("方向：下"), QStringLiteral("bottom"));
+    const int sideIdx =
+        m_edgeSide->findData(cfg.value(QStringLiteral("edge_side")).toString(QStringLiteral("auto")));
+    m_edgeSide->setCurrentIndex(sideIdx >= 0 ? sideIdx : 0);
+    m_edgeSide->setEnabled(edgeHide->isChecked());
+    edgeLay->addWidget(edgeHide);
+    edgeLay->addWidget(m_edgeSide);
+    edgeLay->addStretch(1);
+    lay->addWidget(edgeRow);
     connect(edgeHide, &QCheckBox::toggled, this, [this](bool on) {
+        if (m_edgeSide) m_edgeSide->setEnabled(on);
         QJsonObject c = m_win->currentConfig();
         c[QStringLiteral("edge_hide")] = on;
+        m_win->applyConfig(c);
+    });
+    connect(m_edgeSide, &QComboBox::currentIndexChanged, this, [this](int) {
+        QJsonObject c = m_win->currentConfig();
+        c[QStringLiteral("edge_side")] = m_edgeSide->currentData().toString();
         m_win->applyConfig(c);
     });
 

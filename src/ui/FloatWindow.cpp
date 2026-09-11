@@ -180,6 +180,7 @@ void FloatWindow::applyConfig(const QJsonObject& raw) {
     const bool edgeHide = raw.value(QStringLiteral("edge_hide")).toBool(false);
     if (m_edgeHide && !edgeHide) restoreFromEdge();
     m_edgeHide = edgeHide;
+    m_edgeSide = raw.value(QStringLiteral("edge_side")).toString(QStringLiteral("auto"));
     if (m_edgeHide) {
         if (!m_edgeTimer->isActive()) m_edgeTimer->start();
     } else {
@@ -389,17 +390,29 @@ void FloatWindow::collapseToEdge() {
     const int cx = w.center().x(), cy = w.center().y();
     const int dLeft = cx - g.left(), dRight = g.right() - cx;
     const int dTop = cy - g.top(), dBottom = g.bottom() - cy;
-    const int nearest = qMin(qMin(dLeft, dRight), qMin(dTop, dBottom));
+
+    // 方向：显式指定（left/right/top/bottom）或自动就近
+    QString side;
+    if (m_edgeSide == QStringLiteral("left") || m_edgeSide == QStringLiteral("right") ||
+        m_edgeSide == QStringLiteral("top") || m_edgeSide == QStringLiteral("bottom")) {
+        side = m_edgeSide;
+    } else {
+        const int nearest = qMin(qMin(dLeft, dRight), qMin(dTop, dBottom));
+        if (nearest == dLeft) side = QStringLiteral("left");
+        else if (nearest == dRight) side = QStringLiteral("right");
+        else if (nearest == dTop) side = QStringLiteral("top");
+        else side = QStringLiteral("bottom");
+    }
 
     QPoint flush = w.topLeft();
     QPoint hidden = w.topLeft();
-    if (nearest == dLeft) {
+    if (side == QStringLiteral("left")) {
         flush.setX(g.left());
         hidden.setX(g.left() - w.width() + kEdgeHandlePx);
-    } else if (nearest == dRight) {
+    } else if (side == QStringLiteral("right")) {
         flush.setX(g.right() - w.width() + 1);
         hidden.setX(g.right() - kEdgeHandlePx + 1);
-    } else if (nearest == dTop) {
+    } else if (side == QStringLiteral("top")) {
         flush.setY(g.top());
         hidden.setY(g.top() - w.height() + kEdgeHandlePx);
     } else {
@@ -456,6 +469,7 @@ QJsonObject FloatWindow::currentConfig() const {
     cfg[QStringLiteral("fetch_start")] = m_fetchStart;
     cfg[QStringLiteral("fetch_end")] = m_fetchEnd;
     cfg[QStringLiteral("edge_hide")] = m_edgeHide;
+    cfg[QStringLiteral("edge_side")] = m_edgeSide;
     cfg[QStringLiteral("fg")] = m_fg.name(QColor::HexRgb);
     QJsonObject bg;
     bg[QStringLiteral("r")] = m_bg.red();
