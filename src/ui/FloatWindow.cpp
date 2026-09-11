@@ -1,5 +1,6 @@
 #include "ui/FloatWindow.h"
 #include "data/QuoteColumns.h"
+#include "data/Schedule.h"
 #include "data/SinaQuoteSource.h"
 #include "data/StockCode.h"
 #include "ui/KLineDelegate.h"
@@ -8,6 +9,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QContextMenuEvent>
+#include <QDate>
 #include <QFrame>
 #include <QHeaderView>
 #include <QJsonArray>
@@ -17,6 +19,7 @@
 #include <QPainter>
 #include <QScreen>
 #include <QTableView>
+#include <QTime>
 #include <QTimer>
 #include <QVBoxLayout>
 
@@ -86,8 +89,14 @@ FloatWindow::FloatWindow(const QJsonObject& cfg, QWidget* parent) : QWidget(pare
     m_timer = new QTimer(this);
     connect(m_timer, &QTimer::timeout, this, &FloatWindow::refreshNow);
 
+    // 时段调度：不随窗口隐藏而停止，用于在进入时段时自动显示、离开时自动隐藏。
+    m_scheduleTimer = new QTimer(this);
+    m_scheduleTimer->setInterval(20000);
+    connect(m_scheduleTimer, &QTimer::timeout, this, &FloatWindow::evaluateSchedule);
+
     applyConfig(cfg);
     m_timer->start(m_refreshSeconds * 1000);
+    m_scheduleTimer->start();
 
     const QRect scr = QApplication::primaryScreen()->availableGeometry();
     const QJsonObject pos = cfg.value(QStringLiteral("pos")).toObject();
@@ -102,6 +111,7 @@ FloatWindow::FloatWindow(const QJsonObject& cfg, QWidget* parent) : QWidget(pare
     }
 
     refreshNow();
+    m_wasInShowWindow = inShowWindow();
 }
 
 QString FloatWindow::layoutSignature() const {
@@ -150,6 +160,12 @@ void FloatWindow::applyConfig(const QJsonObject& raw) {
     m_hotkey = raw.value(QStringLiteral("hotkey")).toString(QStringLiteral("Ctrl+Alt+F"));
     m_startOnBoot = raw.value(QStringLiteral("start_on_boot")).toBool(false);
     m_appIcon = raw.value(QStringLiteral("app_icon")).toString();
+    m_showMode = raw.value(QStringLiteral("show_mode")).toString(QStringLiteral("always"));
+    m_showStart = raw.value(QStringLiteral("show_start")).toString(QStringLiteral("09:15"));
+    m_showEnd = raw.value(QStringLiteral("show_end")).toString(QStringLiteral("15:00"));
+    m_fetchMode = raw.value(QStringLiteral("fetch_mode")).toString(QStringLiteral("always"));
+    m_fetchStart = raw.value(QStringLiteral("fetch_start")).toString(QStringLiteral("09:15"));
+    m_fetchEnd = raw.value(QStringLiteral("fetch_end")).toString(QStringLiteral("15:00"));
 
     m_fg = QColor(raw.value(QStringLiteral("fg")).toString(QStringLiteral("#FFFFFF")));
     const QJsonObject bg = raw.value(QStringLiteral("bg")).toObject();
@@ -228,7 +244,32 @@ void FloatWindow::onQuotesReady(const QVector<Quote>& quotes) {
 
 void FloatWindow::refreshNow() {
     if (!isVisible()) return;
+    if (!inFetchWindow()) return;  // 非请求时段：跳过拉取，保留上次数据
     m_source->fetch(m_checkedCodes);
+}
+
+bool FloatWindow::inShowWindow() const {
+    const QTime now = QTime::currentTime();
+    return Schedule::inWindow(m_showMode, m_showStart, m_showEnd, now.hour() * 60 + now.minute(),
+                              QDate::currentDate().dayOfWeek());
+}
+
+bool FloatWindow::inFetchWindow() const {
+    const QTime now = QTime::currentTime();
+    return Schedule::inWindow(m_fetchMode, m_fetchStart, m_fetchEnd, now.hour() * 60 + now.minute(),
+                              QDate::currentDate().dayOfWeek());
+}
+
+void FloatWindow::evaluateSchedule() {
+    const bool inside = inShowWindow();
+    if (inside == m_wasInShowWindow) return;  // 仅在跨越时段边界时切换，不打断手动操作
+    m_wasInShowWindow = inside;
+    if (inside) {
+        show();
+        raise();
+    } else {
+        hide();
+    }
 }
 
 void FloatWindow::refitSize() {
@@ -278,6 +319,12 @@ QJsonObject FloatWindow::currentConfig() const {
     cfg[QStringLiteral("hotkey")] = m_hotkey;
     cfg[QStringLiteral("start_on_boot")] = m_startOnBoot;
     cfg[QStringLiteral("app_icon")] = m_appIcon;
+    cfg[QStringLiteral("show_mode")] = m_showMode;
+    cfg[QStringLiteral("show_start")] = m_showStart;
+    cfg[QStringLiteral("show_end")] = m_showEnd;
+    cfg[QStringLiteral("fetch_mode")] = m_fetchMode;
+    cfg[QStringLiteral("fetch_start")] = m_fetchStart;
+    cfg[QStringLiteral("fetch_end")] = m_fetchEnd;
     cfg[QStringLiteral("fg")] = m_fg.name(QColor::HexRgb);
     QJsonObject bg;
     bg[QStringLiteral("r")] = m_bg.red();
@@ -454,6 +501,12 @@ void FloatWindow::setHeaderFlag(const QString& header, bool on) {
 
 void FloatWindow::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
+    // 按时段显示：当前不在时段内则立即隐藏，等调度定时器在进入时段时再显示。
+    if (m_showMode != QStringLiteral("always") && !inShowWindow()) {
+        m_timer->stop();
+        hide();
+        return;
+    }
     if (!m_timer->isActive()) m_timer->start(m_refreshSeconds * 1000);
     refreshNow();
 }

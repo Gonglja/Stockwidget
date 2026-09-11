@@ -49,6 +49,9 @@ private:
     void persistGeometry();
     void setHeaderFlag(const QString& header, bool on);
     void showContextMenu(const QPoint& globalPos);
+    bool inShowWindow() const;
+    bool inFetchWindow() const;
+    void evaluateSchedule();
     void onQuotesReady(const QVector<Quote>& quotes);
     QString layoutSignature() const;
 
@@ -69,6 +72,12 @@ private:
     QString m_hotkey = QStringLiteral("Ctrl+Alt+F");
     bool m_startOnBoot = false;
     QString m_appIcon;
+    QString m_showMode = QStringLiteral("always");
+    QString m_showStart = QStringLiteral("09:15");
+    QString m_showEnd = QStringLiteral("15:00");
+    QString m_fetchMode = QStringLiteral("always");
+    QString m_fetchStart = QStringLiteral("09:15");
+    QString m_fetchEnd = QStringLiteral("15:00");
     QJsonObject m_columnCfg;
     QString m_layoutSig;
 
@@ -85,6 +94,8 @@ private:
     KLineDelegate* m_klineDelegate = nullptr;
     SinaQuoteSource* m_source = nullptr;
     QTimer* m_timer = nullptr;
+    QTimer* m_scheduleTimer = nullptr;
+    bool m_wasInShowWindow = false;
 
     bool m_dragging = false;
     bool m_dragMoved = false;

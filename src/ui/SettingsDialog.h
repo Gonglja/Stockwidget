@@ -10,6 +10,7 @@ class QListWidget;
 class QListWidgetItem;
 class QPushButton;
 class QSlider;
+class QTimeEdit;
 class QTabWidget;
 
 class SettingsDialog : public QDialog {
@@ -44,5 +45,11 @@ private:
     QKeySequenceEdit* m_hotkeyEdit = nullptr;
     QComboBox* m_interval = nullptr;
     QComboBox* m_icon = nullptr;
+    QComboBox* m_showMode = nullptr;
+    QTimeEdit* m_showStart = nullptr;
+    QTimeEdit* m_showEnd = nullptr;
+    QComboBox* m_fetchMode = nullptr;
+    QTimeEdit* m_fetchStart = nullptr;
+    QTimeEdit* m_fetchEnd = nullptr;
     int m_builtTabs = 0;
 };

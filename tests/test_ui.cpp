@@ -7,6 +7,7 @@
 #include <QSlider>
 #include <QTabWidget>
 #include <QTableView>
+#include <QTime>
 #include "ui/FloatWindow.h"
 #include "ui/SettingsDialog.h"
 
@@ -81,6 +82,37 @@ private slots:
         QApplication::sendEvent(&w, &ev);
         QTest::qWait(50);
         QCOMPARE(w.ctxCount, 1);
+    }
+
+    void alwaysShowStaysVisible() {
+        ProbeWindow w(baseConfig());
+        w.show();
+        QTest::qWait(150);
+        QVERIFY(w.isVisible());
+    }
+
+    void customShowWindowInsideStaysVisible() {
+        QJsonObject cfg = baseConfig();
+        cfg["show_mode"] = "custom";
+        cfg["show_start"] = "00:00";
+        cfg["show_end"] = "23:59";
+        ProbeWindow w(cfg);
+        w.show();
+        QTest::qWait(150);
+        QVERIFY(w.isVisible());
+    }
+
+    void customShowWindowOutsideHidesImmediately() {
+        const QTime now = QTime::currentTime();
+        const bool atMidnight = now.hour() == 0 && now.minute() == 0;
+        QJsonObject cfg = baseConfig();
+        cfg["show_mode"] = "custom";
+        cfg["show_start"] = "00:00";
+        cfg["show_end"] = "00:00";  // 仅 00:00 这一分钟在窗口内
+        ProbeWindow w(cfg);
+        w.show();
+        QTest::qWait(50);
+        if (!atMidnight) QVERIFY(!w.isVisible());
     }
 
     void settingsDialogBuildsAllTabs() {

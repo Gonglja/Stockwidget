@@ -9,6 +9,7 @@ qt_standard_project_setup()
 
 add_library(StockWidgetCore STATIC
     src/data/StockCode.cpp
+    src/data/Schedule.cpp
     src/data/QuoteColumns.cpp
     src/data/QuoteParser.cpp
     src/data/SinaQuoteSource.cpp

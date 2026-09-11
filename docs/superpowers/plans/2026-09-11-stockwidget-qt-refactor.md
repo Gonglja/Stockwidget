@@ -2895,6 +2895,12 @@ git commit -m "build: windeployqt 打包脚本"
    - 现新增 `QKeySequenceEdit`（限制单个组合键），写入 `hotkey` 后由 `Application::saveConfig` 检测变化并**即时重新注册**钩子。
    - 同时修正：程序图标/开机启动的修改也由 `saveConfig` 即时应用（原来仅在启动时应用一次）。
    - 已用 `SendInput` 验证自定义组合键：`Ctrl+Shift+F9` → `registered=1 fired=1`。
+6. **新增「显示/请求时段」**（`show_mode/show_start/show_end`、`fetch_mode/fetch_start/fetch_end`）。
+   - 纯逻辑抽到 `data/Schedule.{h,cpp}`（`inWindow(mode,start,end,nowMinutes,weekday)`），可单测。
+   - 开盘时段 = 周一~五 9:15–15:00（连续，不含节假日）。
+   - 显示：20s 调度定时器（不随隐藏停止），仅跨边界时 show/hide；`showEvent` 在非时段内立即隐藏。
+   - 请求：`refreshNow()` 在非请求时段直接返回。
+   - UI：设置 → 常规页新增「显示时段」「请求时段」两行（下拉 + 起止 `QTimeEdit`，非 custom 时禁用）。
 
 ### 诊断方法（可复现）
 

@@ -14,6 +14,10 @@ qt_add_executable(test_model test_model.cpp)
 target_link_libraries(test_model PRIVATE Qt6::Test StockWidgetCore)
 add_test(NAME test_model COMMAND test_model)
 
+qt_add_executable(test_schedule test_schedule.cpp)
+target_link_libraries(test_schedule PRIVATE Qt6::Test StockWidgetCore)
+add_test(NAME test_schedule COMMAND test_schedule)
+
 # UI 交互测试（复用 app 的 UI 源文件）
 qt_add_executable(test_ui test_ui.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/FloatWindow.cpp

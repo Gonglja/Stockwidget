@@ -127,6 +127,11 @@ QTimer(刷新间隔) ──► FloatWindow
 - **K线**：昨收虚线、涨红跌绿/单色、实体+上下影线、一字线、跌时空心实体填充、随字号缩放（scale 0.5–1.5）。
 - **显示设置**：12 列独立开关、表头开关、网格开关、默认颜色/单色、文字色、背景色 + 背景不透明度 0–100、整体不透明度 20–100。
 - **字体行距**：字体、字号 8–15pt、行距 0–20px（行高 = 字高 + 行距）。
+- **显示/请求时段（两套独立开关）**：
+  - 显示时段：`always`（一直显示）/ `market`（周一~五 9:15–15:00）/ `custom`（自定义起止 HH:MM）。
+  - 请求时段：`always` / `market` / `custom`。
+  - 显示：20s 调度定时器，仅在**跨越时段边界**时切换（进入→`show()`，离开→`hide()`），不打断手动隐藏。
+  - 请求：非请求时段 `refreshNow()` 直接跳过，保留上次数据。
 - **自选管理**：增/删/改/上移/下移 + 勾选显示（`checked_codes`）；代码规格化去重规则：
   - `sh|sz|bj` + 数字 → 直接接受
   - `6`/`90`/`5` 开头 → `sh`；`0`/`1`/`2`/`3` 开头 → `sz`；`4`/`8`/`92` 开头 → `bj`
@@ -149,7 +154,7 @@ QTimer(刷新间隔) ──► FloatWindow
   - `visible_codes` → `checked_codes`
 - **写回新规范 schema**，原子写（`QSaveFile`），一次性完成迁移。
 
-规范 schema 键（与现有 `current_config()` 对齐）：`codes, checked_codes, code_visible, name_visible, price_visible, change_visible, change_pct_visible, b1s1_visible, commi_visible, vol_visible, amount_visible, avg_visible, kline_visible, short_code, name_length, b1s1_price, b1s1_display, header_visible, grid_visible, refresh_seconds, fg, bg{r,g,b,a}, opacity_pct, font_family, font_size, line_extra_px, default_color, pos{x,y}, hotkey, start_on_boot, app_icon`。
+规范 schema 键（与现有 `current_config()` 对齐）：`codes, checked_codes, code_visible, name_visible, price_visible, change_visible, change_pct_visible, b1s1_visible, commi_visible, vol_visible, amount_visible, avg_visible, kline_visible, short_code, name_length, b1s1_price, b1s1_display, header_visible, grid_visible, refresh_seconds, fg, bg{r,g,b,a}, opacity_pct, font_family, font_size, line_extra_px, default_color, pos{x,y}, hotkey, start_on_boot, app_icon, show_mode, show_start, show_end, fetch_mode, fetch_start, fetch_end`。
 
 ---
 

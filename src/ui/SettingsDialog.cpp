@@ -19,6 +19,8 @@
 #include <QPushButton>
 #include <QSlider>
 #include <QTabWidget>
+#include <QTime>
+#include <QTimeEdit>
 #include <QVBoxLayout>
 #include <functional>
 
@@ -295,6 +297,67 @@ QWidget* SettingsDialog::buildGeneralTab() {
     auto* startOnBoot = new QCheckBox(QStringLiteral("开机启动"), page);
     startOnBoot->setChecked(cfg.value(QStringLiteral("start_on_boot")).toBool(false));
     lay->addWidget(startOnBoot);
+
+    auto makeScheduleRow = [&](const QString& title, const QString& modeKey, const QString& startKey,
+                               const QString& endKey, QComboBox*& modeOut, QTimeEdit*& startOut,
+                               QTimeEdit*& endOut) -> QWidget* {
+        auto* group = new QGroupBox(title, page);
+        auto* g = new QGridLayout(group);
+        modeOut = new QComboBox(group);
+        modeOut->addItem(QStringLiteral("一直"), QStringLiteral("always"));
+        modeOut->addItem(QStringLiteral("开盘时段 (9:15–15:00)"), QStringLiteral("market"));
+        modeOut->addItem(QStringLiteral("自定义"), QStringLiteral("custom"));
+        const int mi = modeOut->findData(
+            cfg.value(modeKey).toString(QStringLiteral("always")));
+        modeOut->setCurrentIndex(mi >= 0 ? mi : 0);
+
+        startOut = new QTimeEdit(QTime::fromString(
+            cfg.value(startKey).toString(QStringLiteral("09:15")), QStringLiteral("HH:mm")), group);
+        endOut = new QTimeEdit(QTime::fromString(
+            cfg.value(endKey).toString(QStringLiteral("15:00")), QStringLiteral("HH:mm")), group);
+        startOut->setDisplayFormat(QStringLiteral("HH:mm"));
+        endOut->setDisplayFormat(QStringLiteral("HH:mm"));
+
+        g->addWidget(modeOut, 0, 0, 1, 2);
+        g->addWidget(new QLabel(QStringLiteral("起"), group), 1, 0);
+        g->addWidget(startOut, 1, 1);
+        g->addWidget(new QLabel(QStringLiteral("止"), group), 2, 0);
+        g->addWidget(endOut, 2, 1);
+
+        auto syncEnabled = [modeOut, startOut, endOut] {
+            const bool custom = modeOut->currentData().toString() == QStringLiteral("custom");
+            startOut->setEnabled(custom);
+            endOut->setEnabled(custom);
+        };
+        syncEnabled();
+
+        connect(modeOut, &QComboBox::currentIndexChanged, this,
+                [this, modeKey, startKey, endKey, modeOut, startOut, endOut, syncEnabled](int) {
+                    syncEnabled();
+                    QJsonObject c = m_win->currentConfig();
+                    c[modeKey] = modeOut->currentData().toString();
+                    c[startKey] = startOut->time().toString(QStringLiteral("HH:mm"));
+                    c[endKey] = endOut->time().toString(QStringLiteral("HH:mm"));
+                    m_win->applyConfig(c);
+                });
+        auto onTimeChanged = [this, modeKey, startKey, endKey, modeOut, startOut, endOut] {
+            QJsonObject c = m_win->currentConfig();
+            c[modeKey] = modeOut->currentData().toString();
+            c[startKey] = startOut->time().toString(QStringLiteral("HH:mm"));
+            c[endKey] = endOut->time().toString(QStringLiteral("HH:mm"));
+            m_win->applyConfig(c);
+        };
+        connect(startOut, &QTimeEdit::timeChanged, this, [onTimeChanged](const QTime&) { onTimeChanged(); });
+        connect(endOut, &QTimeEdit::timeChanged, this, [onTimeChanged](const QTime&) { onTimeChanged(); });
+        return group;
+    };
+
+    lay->addWidget(makeScheduleRow(QStringLiteral("显示时段"), QStringLiteral("show_mode"),
+                                   QStringLiteral("show_start"), QStringLiteral("show_end"),
+                                   m_showMode, m_showStart, m_showEnd));
+    lay->addWidget(makeScheduleRow(QStringLiteral("请求时段"), QStringLiteral("fetch_mode"),
+                                   QStringLiteral("fetch_start"), QStringLiteral("fetch_end"),
+                                   m_fetchMode, m_fetchStart, m_fetchEnd));
 
     auto* hotkeyGroup = new QGroupBox(QStringLiteral("快捷键"), page);
     auto* hg = new QHBoxLayout(hotkeyGroup);
