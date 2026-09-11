@@ -115,6 +115,22 @@ private slots:
         if (!atMidnight) QVERIFY(!w.isVisible());
     }
 
+    void locateForcesVisibleOutsideSchedule() {
+        const QTime now = QTime::currentTime();
+        const bool atMidnight = now.hour() == 0 && now.minute() == 0;
+        QJsonObject cfg = baseConfig();
+        cfg["show_mode"] = "custom";
+        cfg["show_start"] = "00:00";
+        cfg["show_end"] = "00:00";
+        ProbeWindow w(cfg);
+        w.show();
+        QTest::qWait(50);
+        if (!atMidnight) QVERIFY(!w.isVisible());  // 构造后按时段自动隐藏
+        w.locate();
+        QTest::qWait(50);
+        if (!atMidnight) QVERIFY(w.isVisible());   // 定位可强制显示
+    }
+
     void settingsDialogBuildsAllTabs() {
         ProbeWindow w(baseConfig());
         w.show();

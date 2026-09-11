@@ -20,6 +20,7 @@ private:
     QIcon resolveIcon(const QString& choice) const;
     void openSettings();
     void toggleWindow();
+    void locateWindow();
 
     QJsonObject m_config;
     FloatWindow* m_window = nullptr;

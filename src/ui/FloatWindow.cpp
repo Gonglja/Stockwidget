@@ -327,6 +327,10 @@ void FloatWindow::checkEdgeHover() {
     }
     if (m_collapsed) return;
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (now < m_edgeGraceUntil) {  // 刚显示/刚定位：先给一段宽限期，不要立刻收起
+        m_outsideSince = 0;
+        return;
+    }
     if (m_outsideSince == 0) {
         m_outsideSince = now;
         return;
@@ -335,6 +339,21 @@ void FloatWindow::checkEdgeHover() {
         m_outsideSince = 0;
         collapseToEdge();
     }
+}
+
+void FloatWindow::locate() {
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    m_edgeGraceUntil = now + 10000;    // 10s 内不自动收起
+    m_forceVisibleUntil = now + 10000; // 10s 内不受显示时段限制
+    restoreFromEdge();
+    if (QScreen* scr = QApplication::primaryScreen()) {
+        const QRect g = scr->availableGeometry();
+        move(g.center().x() - width() / 2, g.center().y() - height() / 2);
+    }
+    if (!isVisible()) show();
+    raise();
+    activateWindow();
+    notifyChanged();
 }
 
 void FloatWindow::collapseToEdge() {
@@ -591,8 +610,11 @@ void FloatWindow::setHeaderFlag(const QString& header, bool on) {
 
 void FloatWindow::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
-    // 按时段显示：当前不在时段内则立即隐藏，等调度定时器在进入时段时再显示。
-    if (m_showMode != QStringLiteral("always") && !inShowWindow()) {
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    m_edgeGraceUntil = qMax(m_edgeGraceUntil, now + 3000);  // 刚显示时宽限 3s
+    // 按时段显示：当前不在时段内则立即隐藏（定位时 force 优先）。
+    if (m_showMode != QStringLiteral("always") && now >= m_forceVisibleUntil &&
+        !inShowWindow()) {
         m_timer->stop();
         hide();
         return;

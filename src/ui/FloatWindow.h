@@ -23,6 +23,7 @@ public:
     QJsonObject currentConfig() const;
     void applyConfig(const QJsonObject& cfg);
     void setOpenSettingsCallback(std::function<void()> cb) { m_openSettings = std::move(cb); }
+    void locate();  // 定位：居中显示并暂时挂起自动隐藏
     void stop();
 
 signals:
@@ -104,6 +105,8 @@ private:
     bool m_edgeHide = false;
     bool m_collapsed = false;
     qint64 m_outsideSince = 0;
+    qint64 m_edgeGraceUntil = 0;
+    qint64 m_forceVisibleUntil = 0;
     QPoint m_flushPos;
 
     bool m_dragging = false;

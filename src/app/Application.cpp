@@ -33,6 +33,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv) {
     m_tray->setToolTip(QStringLiteral("StockWidget"));
     auto* menu = new QMenu();
     menu->addAction(QStringLiteral("显示/隐藏 浮窗"), this, &Application::toggleWindow);
+    menu->addAction(QStringLiteral("定位浮窗"), this, &Application::locateWindow);
     menu->addAction(QStringLiteral("设置…"), this, &Application::openSettings);
     menu->addSeparator();
     menu->addAction(QStringLiteral("退出"), this, &Application::quitApp);
@@ -87,6 +88,10 @@ void Application::toggleWindow() {
         m_window->activateWindow();
     }
     saveConfig();
+}
+
+void Application::locateWindow() {
+    if (m_window) m_window->locate();
 }
 
 void Application::openSettings() { SettingsDialog::showFor(m_window, m_window); }
