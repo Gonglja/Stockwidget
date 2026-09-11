@@ -245,18 +245,12 @@ QWidget* SettingsDialog::buildAppearanceTab() {
     m_lineSpacing->setRange(0, 20);
     m_lineSpacing->setMinimumWidth(150);
     m_lineSpacing->setValue(cfg.value(QStringLiteral("line_extra_px")).toInt(1));
-    m_padding = new QSlider(Qt::Horizontal, font);
-    m_padding->setRange(0, 40);
-    m_padding->setMinimumWidth(150);
-    m_padding->setValue(cfg.value(QStringLiteral("padding_px")).toInt(12));
     fg->addWidget(new QLabel(QStringLiteral("字体"), font), 0, 0);
     fg->addWidget(m_fontFamily, 0, 1);
     fg->addWidget(new QLabel(QStringLiteral("字号"), font), 1, 0);
     fg->addWidget(m_fontSize, 1, 1);
     fg->addWidget(new QLabel(QStringLiteral("行距"), font), 2, 0);
     fg->addWidget(m_lineSpacing, 2, 1);
-    fg->addWidget(new QLabel(QStringLiteral("点击区域"), font), 3, 0);
-    fg->addWidget(m_padding, 3, 1);
     lay->addWidget(font);
 
     auto update = [this](const QString& key, const QJsonValue& value) {
@@ -288,8 +282,6 @@ QWidget* SettingsDialog::buildAppearanceTab() {
             [update](int v) { update(QStringLiteral("font_size"), v); });
     connect(m_lineSpacing, &QSlider::valueChanged, this,
             [update](int v) { update(QStringLiteral("line_extra_px"), v); });
-    connect(m_padding, &QSlider::valueChanged, this,
-            [update](int v) { update(QStringLiteral("padding_px"), v); });
     connect(m_fgButton, &QPushButton::clicked, this, &SettingsDialog::pickForeground);
     connect(m_bgButton, &QPushButton::clicked, this, &SettingsDialog::pickBackground);
     return page;

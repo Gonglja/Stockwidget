@@ -63,7 +63,6 @@ private:
     bool m_gridVisible = false;
     bool m_defaultColor = false;
     int m_lineExtraPx = 1;
-    int m_paddingPx = 12;
     int m_opacityPct = 90;
     QString m_fontFamily = QStringLiteral("Microsoft YaHei");
     int m_fontSize = 10;

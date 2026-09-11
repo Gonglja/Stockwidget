@@ -126,12 +126,12 @@ QTimer(刷新间隔) ──► FloatWindow
 - **格式化**：成交量/成交额 万 / 亿 / 万亿；ETF（`code[2] in {1,5}`）三位小数，其余两位；委比 `±x.xx%`。
 - **K线**：昨收虚线、涨红跌绿/单色、实体+上下影线、一字线、跌时空心实体填充、随字号缩放（scale 0.5–1.5）。
 - **显示设置**：12 列独立开关、表头开关、网格开关、默认颜色/单色、文字色、背景色 + 背景不透明度 0–100、整体不透明度 20–100。
-- **字体行距**：字体、字号 8–15pt、行距 0–20px（行高 = 字高 + 行距）、**点击区域 0–40px**（窗口内边距，加大鼠标可点击范围）。
+- **字体行距**：字体、字号 8–15pt、行距 0–20px（行高 = 字高 + 行距）。
 - **自选管理**：增/删/改/上移/下移 + 勾选显示（`checked_codes`）；代码规格化去重规则：
   - `sh|sz|bj` + 数字 → 直接接受
   - `6`/`90`/`5` 开头 → `sh`；`0`/`1`/`2`/`3` 开头 → `sz`；`4`/`8`/`92` 开头 → `bj`
   - 非法输入回退到上次有效值
-- **其他**：仅显示数字（`short_code`）、名称截断 0–4 字（`name_length`）；刷新间隔 1/2/3/5/10/15/30/60s；全局快捷键（默认 `Ctrl+Alt+F`，**设置面板内可视化录制，改动即时重新注册**）；开机启动（改动即时写入注册表）；程序图标（默认/系统 6 种/自定义文件，改动即时应用）；点击区域；位置记忆；隐藏暂停刷新、显示恢复；错误提示（网络异常显示「无网络连接」，保留上次有效数据）。
+- **其他**：仅显示数字（`short_code`）、名称截断 0–4 字（`name_length`）；刷新间隔 1/2/3/5/10/15/30/60s；全局快捷键（默认 `Ctrl+Alt+F`，**设置面板内可视化录制，改动即时重新注册**）；开机启动（改动即时写入注册表）；程序图标（默认/系统 6 种/自定义文件，改动即时应用）；位置记忆；隐藏暂停刷新、显示恢复；错误提示（网络异常显示「无网络连接」，保留上次有效数据）。
 
 ### 5.1 已知文档-代码不符（决策）
 
@@ -149,7 +149,7 @@ QTimer(刷新间隔) ──► FloatWindow
   - `visible_codes` → `checked_codes`
 - **写回新规范 schema**，原子写（`QSaveFile`），一次性完成迁移。
 
-规范 schema 键（与现有 `current_config()` 对齐）：`codes, checked_codes, code_visible, name_visible, price_visible, change_visible, change_pct_visible, b1s1_visible, commi_visible, vol_visible, amount_visible, avg_visible, kline_visible, short_code, name_length, b1s1_price, b1s1_display, header_visible, grid_visible, refresh_seconds, fg, bg{r,g,b,a}, opacity_pct, font_family, font_size, line_extra_px, padding_px, default_color, pos{x,y}, hotkey, start_on_boot, app_icon`。
+规范 schema 键（与现有 `current_config()` 对齐）：`codes, checked_codes, code_visible, name_visible, price_visible, change_visible, change_pct_visible, b1s1_visible, commi_visible, vol_visible, amount_visible, avg_visible, kline_visible, short_code, name_length, b1s1_price, b1s1_display, header_visible, grid_visible, refresh_seconds, fg, bg{r,g,b,a}, opacity_pct, font_family, font_size, line_extra_px, default_color, pos{x,y}, hotkey, start_on_boot, app_icon`。
 
 ---
 
