@@ -140,7 +140,7 @@ void applyAliases(QVector<Quote>& quotes, const QJsonObject& nameMap);
 - **别名优先于行情名称**：命中且非空 ⇒ 覆盖 `q.name`
 - **别名不受 `name_length` 截断**：截断只作用于行情名称（别名是用户自己写的，砍掉不合理）
 - 别名缺失/为空 ⇒ 用行情名称
-- 查表时先对 `code` 做 `StockCode::normalize()`，再回退到原样查表（容错，兼容手改配置时写入的裸代码）
+- 查表键：先对 `code` 做 `StockCode::normalize()`，归一化失败则用原样字符串（容错，兼容手改配置写入的裸代码）
 
 ### 4.4 数据流（顺序固定）
 
@@ -151,7 +151,7 @@ SinaQuoteSource → QuoteParser（截断行情名称）
                 → QuoteModel::setQuotes()
 ```
 
-`FloatWindow::onQuotesReady(const QVector<Quote>& quotes)` 内做一次值拷贝（排序需要可变版本），排序后再交给模型。保证排序用的是**用户最终看到的值**。
+`FloatWindow::onQuotesReady(const QVector<Quote>& quotes)` 内做一次值拷贝（排序需要可变版本），依次调用 `applyAliases()` 与 `sortQuotes()`，再交给模型。保证排序用的是**用户最终看到的值** —— 即按「名称」列排序时比较的是**别名**（而非行情名称）。
 
 ---
 
@@ -173,13 +173,14 @@ SinaQuoteSource → QuoteParser（截断行情名称）
 ### 5.3 浮窗行内右键
 
 `FloatWindow::showContextMenu(globalPos)` 中：若右键落在表格某一行（按全局坐标反算 `viewport` 坐标 → `indexAt().row() >= 0`），在菜单**顶部**插入「自定义名称…」，其余菜单项原样保留。
-点击后 `QInputDialog` 预填当前别名，清空 ⇒ 恢复行情名称；确定后写 `name_map` 并**立即重绘**（不等下一次刷新）。
+点击后 `QInputDialog` 预填当前别名，清空 ⇒ 恢复行情名称；确定后写 `name_map`，**立即**对当前数据重跑 `applyAliases()`（被 `sort_key == "name"` 激活时同时重排）并重绘，不等下一次刷新。
 
 ### 5.4 表头点击排序
 
-- `setSectionsClickable(true)` + `setSortIndicatorShown(true)`
+- `setSectionsClickable(true)`
 - 三态循环：**不排序 → 降序 → 升序 → 不排序**；每次写 `sort_key` / `sort_asc`，立即重排 + 更新指示器 + 重绘
-- K 线列表头点击无效（无指示器）；对无排序语义的列不显示指示器
+- 指示器：处于排序态时 `setSortIndicator(col, asc ? Ascending : Descending)` + `setSortIndicatorShown(true)`；回到「不排序」时 `setSortIndicatorShown(false)`（不用非法的 `-1` section 去清指示器）
+- K 线列不可排序：点击后排序状态不变，也不显示指示器
 - 表头隐藏（`header_visible=false`）时排序入口一并隐藏，但**排序状态保留**（仍按上次键排序），靠右键「显示表头」恢复入口
 - **事件过滤器改动**：在 `horizontalHeader` 上的左键按下/移动/释放不再进入拖动分支，直接放行给 `QHeaderView`（由 `sectionClicked` 处理）；表头区域双击也不触发「单击隐藏」。表头以外的拖动/单击隐藏/双击隐藏/右键转发逻辑**逐条保持原样**
 

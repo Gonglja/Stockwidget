@@ -2921,6 +2921,11 @@ git commit -m "build: windeployqt 打包脚本"
    - 字段格式：`[0]名称或带前缀代码,[1]类型,[2]代码,[3]带前缀代码,[4]名称,...`——**名称取 [4]、代码取 [3]**（对单结果/多结果两种响应都成立）。
    - 踩坑：①接口 key 需 **UTF-8** 百分号编码，GBK 会返回通用列表；②必须用 `QUrl::fromEncoded` 避免二次编码；③`QRegularExpression("...\d{6}$")` 不可写成单反斜杠。
    - UI：设置 → 自选列表顶部搜索框，300ms 防抖，下拉结果点选/回车加入并勾选；纯数字/带前缀代码仍可直接添加。
+11. **修复（CI 暴露的真实 bug）：网络 reply 生命周期错误导致段错误**。
+   - 现象：CI 上 `test_ui::singleClickOnViewportHides` 挂在 15s 后 `0xc0000005`，栈为 `QTimer::timerEvent -> QObject::deleteLater`。
+   - 根因：`SinaQuoteSource::fetch()` / `StockSuggestSource::query()` 的 `finished` 回调读取**共享成员 `m_reply`** 而非发出信号的 reply。定时刷新(2s) 与网络超时(3s) 重叠时，旧请求的回调会把**新** reply 置空并 `deleteLater()`，新请求回调再执行时 `reply==nullptr` → 崩溃。本机网络快(<2s)从不重叠，故本地测不出。
+   - 修复：① 回调捕获 reply 本身，仅当 `m_reply == reply` 才置空；② 忽略 `OperationCanceledError`；③ 改为**在途时跳过本次请求**（不 cancel），避免慢网络下永远拉不到数据。
+   - 同时：`test_ui` 默认 `fetch_mode=custom`（不在请求时段）→ 测试离线、快速。
 
 ### 诊断方法（可复现）
 
