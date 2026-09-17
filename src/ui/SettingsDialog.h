@@ -22,12 +22,17 @@ public:
     SettingsDialog(FloatWindow* win, QWidget* parent = nullptr);
     static SettingsDialog* showFor(FloatWindow* win, QWidget* parent = nullptr);
 
+    // 校验并落库一条「代码 + 别名」；item 为空则按代码查找/新建。非法代码返回 false
+    bool applyCodeEdit(const QString& code, const QString& alias, QListWidgetItem* item = nullptr);
+
 private:
     QWidget* buildCodesTab();
     QWidget* buildDataTab();
     QWidget* buildAppearanceTab();
     QWidget* buildGeneralTab();
     void ensureTab(int index);
+    void commitCodes();
+    void editCodeItem(QListWidgetItem* item);
     void pickForeground();
     void pickBackground();
     void pickIcon();
@@ -47,6 +52,7 @@ private:
     QComboBox* m_fontFamily = nullptr;
     QKeySequenceEdit* m_hotkeyEdit = nullptr;
     QComboBox* m_interval = nullptr;
+    QComboBox* m_nameLength = nullptr;
     QComboBox* m_icon = nullptr;
     QComboBox* m_showMode = nullptr;
     QComboBox* m_edgeSide = nullptr;

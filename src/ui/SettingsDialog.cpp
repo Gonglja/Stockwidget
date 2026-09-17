@@ -7,8 +7,10 @@
 #include <QCheckBox>
 #include <QColorDialog>
 #include <QComboBox>
+#include <QDialogButtonBox>
 #include <QFileDialog>
 #include <QFontDatabase>
+#include <QFormLayout>
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -18,7 +20,9 @@
 #include <QLabel>
 #include <QListWidget>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QPushButton>
+#include <QSignalBlocker>
 #include <QSlider>
 #include <QTabWidget>
 #include <QTime>
@@ -82,6 +86,7 @@ QWidget* SettingsDialog::buildCodesTab() {
     // 搜索行：输入代码（可不带前缀）或名称模糊搜索
     auto* searchRow = new QHBoxLayout();
     m_searchEdit = new QLineEdit(group);
+    m_searchEdit->setObjectName(QStringLiteral("searchEdit"));
     m_searchEdit->setPlaceholderText(QStringLiteral("输入代码（可不带前缀）或名称模糊搜索…"));
     auto* btnAddSearch = new QPushButton(QStringLiteral("添加"), group);
     btnAddSearch->setFixedWidth(60);
@@ -97,36 +102,30 @@ QWidget* SettingsDialog::buildCodesTab() {
 
     auto* h = new QHBoxLayout();
     m_codeList = new QListWidget(group);
+    m_codeList->setObjectName(QStringLiteral("codeList"));
     m_codeList->setFixedWidth(150);
 
     const QJsonObject cfg = m_win->currentConfig();
     const QJsonArray codes = cfg.value(QStringLiteral("codes")).toArray();
     const QJsonArray checked = cfg.value(QStringLiteral("checked_codes")).toArray();
+    const QJsonObject nameMap = cfg.value(QStringLiteral("name_map")).toObject();
     for (const QJsonValue& v : codes) {
-        auto* item = new QListWidgetItem(v.toString(), m_codeList);
-        item->setFlags(item->flags() | Qt::ItemIsUserCheckable | Qt::ItemIsEditable);
+        const QString code = v.toString();
+        const QString alias = nameMap.value(code).toString();
+        auto* item = new QListWidgetItem(
+            alias.isEmpty() ? code : QStringLiteral("%1  %2").arg(code, alias), m_codeList);
+        item->setFlags((item->flags() | Qt::ItemIsUserCheckable) & ~Qt::ItemIsEditable);
+        item->setData(Qt::UserRole, code);
+        item->setData(Qt::UserRole + 1, alias);
         item->setCheckState(checked.contains(v) ? Qt::Checked : Qt::Unchecked);
     }
 
-    auto commit = [this] {
-        QStringList list, checkedList;
-        for (int i = 0; i < m_codeList->count(); ++i) {
-            const QListWidgetItem* it = m_codeList->item(i);
-            const auto n = StockCode::normalize(it->text());
-            if (!n) continue;
-            list << *n;
-            if (it->checkState() == Qt::Checked) checkedList << *n;
-        }
-        QJsonObject c = m_win->currentConfig();
-        c[QStringLiteral("codes")] = QJsonArray::fromStringList(list);
-        c[QStringLiteral("checked_codes")] = QJsonArray::fromStringList(checkedList);
-        m_win->applyConfig(c);
-    };
+    auto commit = [this] { commitCodes(); };
     auto addCode = [this, commit](const QString& codeIn) -> bool {
         const auto n = StockCode::normalize(codeIn);
         if (!n) return false;
         for (int i = 0; i < m_codeList->count(); ++i) {
-            if (m_codeList->item(i)->text() == *n) {
+            if (m_codeList->item(i)->data(Qt::UserRole).toString() == *n) {
                 m_codeList->item(i)->setCheckState(Qt::Checked);
                 m_codeList->setCurrentRow(i);
                 commit();
@@ -134,7 +133,8 @@ QWidget* SettingsDialog::buildCodesTab() {
             }
         }
         auto* it = new QListWidgetItem(*n, m_codeList);
-        it->setFlags(it->flags() | Qt::ItemIsUserCheckable | Qt::ItemIsEditable);
+        it->setFlags((it->flags() | Qt::ItemIsUserCheckable) & ~Qt::ItemIsEditable);
+        it->setData(Qt::UserRole, *n);
         it->setCheckState(Qt::Checked);
         m_codeList->setCurrentItem(it);
         commit();
@@ -234,8 +234,90 @@ QWidget* SettingsDialog::buildCodesTab() {
     h->addLayout(btnCol);
     outer->addLayout(h, 1);
     lay->addWidget(group);
+    connect(m_codeList, &QListWidget::itemDoubleClicked, this,
+            [this](QListWidgetItem* it) { editCodeItem(it); });
     connect(m_codeList, &QListWidget::itemChanged, this, [commit](QListWidgetItem*) { commit(); });
     return page;
+}
+
+void SettingsDialog::commitCodes() {
+    if (!m_codeList) return;
+    QStringList list, checkedList;
+    QJsonObject nameMap = m_win->currentConfig().value(QStringLiteral("name_map")).toObject();
+    for (int i = 0; i < m_codeList->count(); ++i) {
+        const QListWidgetItem* it = m_codeList->item(i);
+        const auto n = StockCode::normalize(it->data(Qt::UserRole).toString());
+        if (!n) continue;
+        list << *n;
+        if (it->checkState() == Qt::Checked) checkedList << *n;
+        const QString alias = it->data(Qt::UserRole + 1).toString().trimmed();
+        if (alias.isEmpty()) nameMap.remove(*n);
+        else nameMap.insert(*n, alias);
+    }
+    QJsonObject c = m_win->currentConfig();
+    c[QStringLiteral("codes")] = QJsonArray::fromStringList(list);
+    c[QStringLiteral("checked_codes")] = QJsonArray::fromStringList(checkedList);
+    c[QStringLiteral("name_map")] = nameMap;
+    m_win->applyConfig(c);
+}
+
+bool SettingsDialog::applyCodeEdit(const QString& code, const QString& alias, QListWidgetItem* item) {
+    if (!m_codeList) return false;
+    const auto n = StockCode::normalize(code);
+    if (!n) return false;
+
+    if (item) item->setData(Qt::UserRole, *n);
+    if (!item) {
+        for (int i = 0; i < m_codeList->count(); ++i) {
+            if (m_codeList->item(i)->data(Qt::UserRole).toString() == *n) {
+                item = m_codeList->item(i);
+                break;
+            }
+        }
+    }
+    const QSignalBlocker blocker(m_codeList);  // 避免 setText 触发 itemChanged 递归提交
+    if (!item) {
+        item = new QListWidgetItem(*n, m_codeList);
+        item->setFlags((item->flags() | Qt::ItemIsUserCheckable) & ~Qt::ItemIsEditable);
+        item->setCheckState(Qt::Checked);
+        item->setData(Qt::UserRole, *n);
+    }
+    const QString value = alias.trimmed();
+    item->setData(Qt::UserRole + 1, value);
+    item->setText(value.isEmpty() ? *n : QStringLiteral("%1  %2").arg(*n, value));
+    m_codeList->setCurrentItem(item);
+    commitCodes();
+    return true;
+}
+
+void SettingsDialog::editCodeItem(QListWidgetItem* item) {
+    if (!item || !m_codeList) return;
+
+    QDialog dlg(this);
+    dlg.setObjectName(QStringLiteral("codeEditDialog"));
+    dlg.setWindowTitle(QStringLiteral("股票"));
+    auto* form = new QFormLayout(&dlg);
+    auto* codeEdit = new QLineEdit(item->data(Qt::UserRole).toString(), &dlg);
+    codeEdit->setObjectName(QStringLiteral("codeEdit"));
+    auto* aliasEdit = new QLineEdit(item->data(Qt::UserRole + 1).toString(), &dlg);
+    aliasEdit->setObjectName(QStringLiteral("aliasEdit"));
+    aliasEdit->setPlaceholderText(QStringLiteral("留空 = 使用行情名称"));
+    form->addRow(QStringLiteral("代码"), codeEdit);
+    form->addRow(QStringLiteral("自定义名称"), aliasEdit);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    form->addRow(buttons);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, [&dlg, codeEdit] {
+        if (!StockCode::normalize(codeEdit->text())) {
+            QMessageBox::warning(&dlg, QStringLiteral("代码无效"),
+                                 QStringLiteral("请输入 6 位代码或带前缀代码（如 sh600000）"));
+            return;
+        }
+        dlg.accept();
+    });
+
+    if (dlg.exec() != QDialog::Accepted) return;
+    applyCodeEdit(codeEdit->text(), aliasEdit->text(), item);
 }
 
 QWidget* SettingsDialog::buildDataTab() {
@@ -273,6 +355,26 @@ QWidget* SettingsDialog::buildDataTab() {
         }
     }
     lay->addWidget(flags);
+
+    auto* nameRow = new QWidget(page);
+    auto* nameLay = new QHBoxLayout(nameRow);
+    nameLay->addWidget(new QLabel(QStringLiteral("名称显示"), nameRow));
+    m_nameLength = new QComboBox(nameRow);
+    m_nameLength->setObjectName(QStringLiteral("nameLengthCombo"));
+    m_nameLength->addItem(QStringLiteral("全称"), 0);
+    for (int n = 1; n <= 4; ++n)
+        m_nameLength->addItem(QStringLiteral("%1 字").arg(n), n);
+    const int nameIdx = m_nameLength->findData(cfg.value(QStringLiteral("name_length")).toInt(0));
+    m_nameLength->setCurrentIndex(nameIdx >= 0 ? nameIdx : 0);
+    nameLay->addWidget(m_nameLength);
+    nameLay->addStretch(1);
+    lay->addWidget(nameRow);
+
+    connect(m_nameLength, &QComboBox::currentIndexChanged, this, [this](int) {
+        QJsonObject c = m_win->currentConfig();
+        c[QStringLiteral("name_length")] = m_nameLength->currentData().toInt();
+        m_win->applyConfig(c);
+    });
 
     connect(m_interval, &QComboBox::currentIndexChanged, this, [this](int) {
         QJsonObject c = m_win->currentConfig();

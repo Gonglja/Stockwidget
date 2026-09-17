@@ -4,22 +4,23 @@ namespace {
 struct Entry {
     const char* header;
     const char* key;
+    const char* sortKey;
     bool right;
     bool colored;
 };
 const Entry kEntries[] = {
-    {"代码",   "code_visible",       true,  false},
-    {"名称",   "name_visible",       false, false},
-    {"现价",   "price_visible",      true,  true},
-    {"涨跌值", "change_visible",     true,  true},
-    {"涨跌幅", "change_pct_visible", true,  true},
-    {"买一",   "b1s1_visible",       true,  true},
-    {"卖一",   "b1s1_visible",       false, true},
-    {"委比",   "commi_visible",      true,  true},
-    {"成交量", "vol_visible",        true,  false},
-    {"成交额", "amount_visible",     true,  false},
-    {"均价",   "avg_visible",        true,  true},
-    {"K线",    "kline_visible",      false, false},
+    {"代码",   "code_visible",       "code",       true,  false},
+    {"名称",   "name_visible",       "name",       false, false},
+    {"现价",   "price_visible",      "price",      true,  true},
+    {"涨跌值", "change_visible",     "change",     true,  true},
+    {"涨跌幅", "change_pct_visible", "change_pct", true,  true},
+    {"买一",   "b1s1_visible",       "buy1",       true,  true},
+    {"卖一",   "b1s1_visible",       "sell1",      false, true},
+    {"委比",   "commi_visible",      "commi",      true,  true},
+    {"成交量", "vol_visible",        "vol",        true,  false},
+    {"成交额", "amount_visible",     "amount",     true,  false},
+    {"均价",   "avg_visible",        "avg",        true,  true},
+    {"K线",    "kline_visible",      "",           false, false},
 };
 }  // namespace
 
@@ -32,6 +33,12 @@ QStringList QuoteColumns::allHeaders() {
 QString QuoteColumns::configKeyFor(const QString& header) {
     for (const Entry& e : kEntries)
         if (QString::fromUtf8(e.header) == header) return QString::fromUtf8(e.key);
+    return QString();
+}
+
+QString QuoteColumns::sortKeyFor(const QString& header) {
+    for (const Entry& e : kEntries)
+        if (QString::fromUtf8(e.header) == header) return QString::fromUtf8(e.sortKey);
     return QString();
 }
 

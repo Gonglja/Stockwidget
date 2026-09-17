@@ -216,10 +216,12 @@ private slots:
         QVector<Quote> q = threeQuotes();
         QuoteSort::sortQuotes(q, "amount", false);
         QCOMPARE(q.at(0).code, QString("sh600000"));  // 8.16 万
+        QCOMPARE(q.at(1).code, QString("sz000001"));  // 4.75 万
         QCOMPARE(q.at(2).code, QString("sz300136"));  // 1.05 万
         QuoteSort::sortQuotes(q, "avg", true);
         QCOMPARE(q.at(0).code, QString("sz000001"));  // 9.50
-        QCOMPARE(q.at(2).code, QString("sh600000"));  // 10.20
+        QCOMPARE(q.at(1).code, QString("sh600000"));  // 10.20
+        QCOMPARE(q.at(2).code, QString("sz300136"));  // 10.50
     }
     void stableForEqualValues() {
         QVector<Quote> q{makeQuote("sh600000", "A", 10.0, 10.0, 1),
@@ -247,7 +249,9 @@ private slots:
         QCOMPARE(q.at(0).code, QString("sh600000"));
         QCOMPARE(q.at(1).code, QString("sh600001"));
         QuoteSort::sortQuotes(q, "name", true);
-        QCOMPARE(q.at(0).name, QString("甲"));
+        // QString::compare 按 UTF-16 码位比较（不做拼音）：乙 U+4E59 < 甲 U+7532
+        QCOMPARE(q.at(0).name, QString("乙"));
+        QCOMPARE(q.at(1).name, QString("甲"));
     }
     void unknownKeyKeepsOrder() {
         QVector<Quote> q = threeQuotes();
@@ -505,23 +509,45 @@ void applyAliases(QVector<Quote>& quotes, const QJsonObject& nameMap);
 #include "data/NameAlias.h"
 #include "data/StockCode.h"
 
+namespace {
+
+// 把映射表的键统一成归一化形式（容错：手改配置写入的裸代码 / 大小写混杂）
+// 单次调用的开销 O(map)；批量场景请走 applyAliases，它只归一化一次。
+QJsonObject normalizedMap(const QJsonObject& nameMap) {
+    QJsonObject out;
+    for (auto it = nameMap.begin(); it != nameMap.end(); ++it) {
+        const QString value = it.value().toString().trimmed();
+        if (value.isEmpty()) continue;
+        const auto normalized = StockCode::normalize(it.key());
+        const QString key = normalized ? *normalized : it.key();
+        if (!out.contains(key)) out.insert(key, value);
+    }
+    return out;
+}
+
+}  // namespace
+
 QString NameAlias::aliasFor(const QJsonObject& nameMap, const QString& code) {
     if (nameMap.isEmpty() || code.isEmpty()) return QString();
-    const auto normalized = StockCode::normalize(code);
-    const QString key = normalized ? *normalized : code;
-    const QString direct = nameMap.value(key).toString().trimmed();
-    if (!direct.isEmpty()) return direct;
-    if (key != code) {  // 容错：手改配置写入的裸代码
-        const QString fallback = nameMap.value(code).toString().trimmed();
-        if (!fallback.isEmpty()) return fallback;
+    const QJsonObject map = normalizedMap(nameMap);
+    QString alias = map.value(code).toString();
+    if (alias.isEmpty()) {
+        const auto normalized = StockCode::normalize(code);
+        if (normalized) alias = map.value(*normalized).toString();
     }
-    return QString();
+    return alias;
 }
 
 void NameAlias::applyAliases(QVector<Quote>& quotes, const QJsonObject& nameMap) {
-    if (nameMap.isEmpty()) return;
+    if (nameMap.isEmpty() || quotes.isEmpty()) return;
+    const QJsonObject map = normalizedMap(nameMap);
+    if (map.isEmpty()) return;
     for (Quote& q : quotes) {
-        const QString alias = aliasFor(nameMap, q.code);
+        QString alias = map.value(q.code).toString();  // 常见路径：q.code 已是归一化形式
+        if (alias.isEmpty()) {
+            const auto normalized = StockCode::normalize(q.code);
+            if (normalized) alias = map.value(*normalized).toString();
+        }
         if (!alias.isEmpty()) q.name = alias;
     }
 }
@@ -757,7 +783,9 @@ static QString cellText(QAbstractItemModel* model, int row, int col) {
     }
 
     void headerClickCyclesSortDescAscOff() {
-        ProbeWindow w(baseConfig());
+        QJsonObject cfg = baseConfig();
+        cfg["header_visible"] = true;  // 表头不可点时点击会落到视图（老行为：隐藏窗口）
+        ProbeWindow w(cfg);
         w.show();
         QTest::qWait(200);
 
@@ -768,11 +796,15 @@ static QString cellText(QAbstractItemModel* model, int row, int col) {
         auto* header = table->horizontalHeader();
         const int col = columnOf(table->model(), "涨跌幅");
         QVERIFY(col >= 0);
-        const QPoint pos(header->sectionViewportPosition(col) + header->sectionSize(col) / 2,
-                         header->height() / 2);
+        // 每次都按当前列宽重算点击位置：排序指示器出现/数据变化都会让列宽微调
+        auto clickHeader = [header, col] {
+            const QPoint p(header->sectionViewportPosition(col) + header->sectionSize(col) / 2,
+                           header->height() / 2);
+            QTest::mouseClick(header, Qt::LeftButton, Qt::NoModifier, p);
+            QTest::qWait(50);
+        };
 
-        QTest::mouseClick(header, Qt::LeftButton, Qt::NoModifier, pos);
-        QTest::qWait(50);
+        clickHeader();  // 第一次 → 降序
         QCOMPARE(w.currentConfig().value("sort_key").toString(), QString("change_pct"));
         QCOMPARE(w.currentConfig().value("sort_asc").toBool(), false);
         QVERIFY(header->isSortIndicatorShown());
@@ -780,24 +812,24 @@ static QString cellText(QAbstractItemModel* model, int row, int col) {
         QCOMPARE(cellText(table->model(), 0, col), QString("+2.00%"));
         QVERIFY2(w.isVisible(), "clicking the header must not hide the window");
 
-        QTest::mouseClick(header, Qt::LeftButton, Qt::NoModifier, pos);
-        QTest::qWait(50);
+        clickHeader();  // 第二次 → 升序
+        QCOMPARE(w.currentConfig().value("sort_key").toString(), QString("change_pct"));
         QCOMPARE(w.currentConfig().value("sort_asc").toBool(), true);
         QCOMPARE(header->sortIndicatorOrder(), Qt::AscendingOrder);
         QCOMPARE(cellText(table->model(), 0, col), QString("-5.00%"));
         QVERIFY(w.isVisible());
 
-        QTest::mouseClick(header, Qt::LeftButton, Qt::NoModifier, pos);
-        QTest::qWait(50);
+        clickHeader();  // 第三次 → 取消排序，回到自选顺序
         QCOMPARE(w.currentConfig().value("sort_key").toString(), QString());
         QVERIFY(!header->isSortIndicatorShown());
-        QCOMPARE(cellText(table->model(), 0, col), QString("+2.00%"));  // 回到自选顺序
+        QCOMPARE(cellText(table->model(), 0, col), QString("+2.00%"));
         QVERIFY(w.isVisible());
     }
 
     void headerClickOnKLineColumnIsIgnored() {
         QJsonObject cfg = baseConfig();
         cfg["kline_visible"] = true;
+        cfg["header_visible"] = true;
         ProbeWindow w(cfg);
         w.show();
         QTest::qWait(200);
@@ -873,6 +905,7 @@ private:
 
 ```cpp
     bool m_pressOnHeader = false;
+    int m_headerPressColumn = -1;
 ```
 
 `src/ui/FloatWindow.cpp`：
@@ -891,11 +924,7 @@ private:
     m_table->horizontalHeader()->setSortIndicatorShown(false);
 ```
 
-3) 构造函数里，`m_table->setModel(m_model);` 之后加入：
-
-```cpp
-    connect(m_table->horizontalHeader(), &QHeaderView::sectionClicked, this, &FloatWindow::cycleSort);
-```
+3) 构造函数里 `m_table->setModel(m_model);` 之后**不需要**任何 connect（表头事件由 `eventFilter` 接管）。
 
 4) `applyConfig()` 里，`m_nameLength = raw.value(QStringLiteral("name_length")).toInt(0);` 之后加入：
 
@@ -983,30 +1012,46 @@ void FloatWindow::cycleSort(int column) {
 }
 ```
 
-8) `eventFilter()` 函数体最前面加入表头放行分支：
+8) `eventFilter()` 函数体最前面加入表头接管分支：
 
 ```cpp
 bool FloatWindow::eventFilter(QObject* obj, QEvent* event) {
-    // 表头区域放行给 QHeaderView（sectionClicked → 排序），不参与窗口拖动/单击隐藏
-    const QEvent::Type type = event->type();
-    const bool headerMouse =
-        obj == m_table->horizontalHeader() &&
-        (type == QEvent::MouseButtonPress || type == QEvent::MouseButtonDblClick ||
-         type == QEvent::MouseMove || type == QEvent::MouseButtonRelease);
-    if (headerMouse && (m_pressOnHeader || type == QEvent::MouseButtonPress ||
-                        type == QEvent::MouseButtonDblClick)) {
-        if (type == QEvent::MouseButtonPress) {
-            m_dragging = false;
-            m_pressOnHeader = true;
-        } else if (type == QEvent::MouseButtonRelease) {
-            m_pressOnHeader = false;
+    // 表头左键由本窗口接管：QHeaderView 不接受这些事件，Qt 会把它继续冒泡给 QTableView，
+    // 从而被当成拖动/单击隐藏（并吞掉 sectionClicked）。这里自己实现三态排序，语义同 sectionClicked。
+    if (obj == m_table->horizontalHeader()) {
+        switch (event->type()) {
+            case QEvent::MouseButtonPress: {
+                auto* me = static_cast<QMouseEvent*>(event);
+                if (me->button() != Qt::LeftButton) break;
+                m_dragging = false;
+                m_pressOnHeader = true;
+                m_headerPressColumn = m_table->horizontalHeader()->logicalIndexAt(
+                    me->position().toPoint().x());
+                return true;
+            }
+            case QEvent::MouseMove:
+                if (m_pressOnHeader) return true;
+                break;
+            case QEvent::MouseButtonRelease: {
+                auto* me = static_cast<QMouseEvent*>(event);
+                if (me->button() != Qt::LeftButton || !m_pressOnHeader) break;
+                m_pressOnHeader = false;
+                const int column = m_table->horizontalHeader()->logicalIndexAt(
+                    me->position().toPoint().x());
+                if (column >= 0 && column == m_headerPressColumn) cycleSort(column);
+                return true;
+            }
+            case QEvent::MouseButtonDblClick:
+                return true;  // 表头上的双击不触发「单击隐藏」
+            default:
+                break;
         }
-        return false;
     }
     if (event->type() == QEvent::MouseButtonDblClick) {
 ```
 
 > 注意：`eventFilter` 原有分支**一行都不要动**，只新增上面这段。
+> **不要**连接 `QHeaderView::sectionClicked`（会在事件被接管后双重触发，且 Qt 实际上不会发出）。
 
 9) 本任务先给出 `setAlias()` 的可用实现（Task 6 会接入 UI 入口）：
 
@@ -1308,7 +1353,8 @@ git commit -m "feat(ui): 浮窗行内右键自定义名称（QuoteModel 暴露 c
         QVERIFY(list->count() == 1);
 
         bool sawDialog = false;
-        QTimer::singleShot(200, [&sawDialog] {
+        // context object = &dlg：用例提前结束时定时器自动取消，避免 lambda 访问已销毁对象
+        QTimer::singleShot(200, &dlg, [&sawDialog, &dlg] {
             QWidget* modal = QApplication::activeModalWidget();
             if (!modal) return;
             sawDialog = modal->objectName() == QString("codeEditDialog");
@@ -1317,7 +1363,10 @@ git commit -m "feat(ui): 浮窗行内右键自定义名称（QuoteModel 暴露 c
             if (auto* box = modal->findChild<QDialogButtonBox*>())
                 if (auto* ok = box->button(QDialogButtonBox::Ok)) ok->click();
         });
+        // QAbstractItemView 只在 pressedIndex 匹配时才发 doubleClicked，
+        // 因此先 click 补上 press/release，再 dclick（单发 mouseDClick 不会触发）
         const QRect rect = list->visualItemRect(list->item(0));
+        QTest::mouseClick(list->viewport(), Qt::LeftButton, Qt::NoModifier, rect.center());
         QTest::mouseDClick(list->viewport(), Qt::LeftButton, Qt::NoModifier, rect.center());
         QTest::qWait(50);
 

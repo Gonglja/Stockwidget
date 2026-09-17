@@ -10,6 +10,17 @@
 #include <QTime>
 #include "ui/FloatWindow.h"
 #include "ui/SettingsDialog.h"
+#include <QComboBox>
+#include <QDialogButtonBox>
+#include <QHeaderView>
+#include <QLineEdit>
+#include <QListWidget>
+#include <QMenu>
+#include <QPushButton>
+#include <QTimer>
+#include "data/QuoteParser.h"
+#include "data/QuoteSort.h"
+#include "ui/QuoteModel.h"
 
 // Subclass so the context-menu slot doesn't open a modal menu during tests.
 class ProbeWindow : public FloatWindow {
@@ -17,11 +28,45 @@ public:
     using FloatWindow::FloatWindow;
     int ctxCount = 0;
     void contextMenuEvent(QContextMenuEvent*) override { ++ctxCount; }
+    QMenu* menuAt(const QPoint& globalPos) { return buildContextMenu(globalPos); }
+    void pushQuotes(const QVector<Quote>& quotes) {
+        QMetaObject::invokeMethod(this, "onQuotesReady", Qt::DirectConnection,
+                                  Q_ARG(QVector<Quote>, quotes));
+    }
 };
+
+// 两行真实新浪格式行情：sh600000 +2.00%，sz000001 -5.00%（行序 = 自选顺序）
+static const char* kTwoLines =
+    "var hq_str_sh600000=\"浦发银行,10.100,10.000,10.200,10.300,9.900,"
+    "10.190,10.200,8000,81600.000,"
+    "100,10.180,200,10.170,300,10.160,400,10.150,500,10.140,"
+    "600,10.210,700,10.220,800,10.230,900,10.240,1000,10.250,"
+    "2026-09-11,15:00:00,00\";\n"
+    "var hq_str_sz000001=\"平安银行,10.000,10.000,9.500,10.100,9.400,"
+    "9.490,9.500,5000,47500.000,"
+    "100,9.480,200,9.470,300,9.460,400,9.450,500,9.440,"
+    "600,9.510,700,9.520,800,9.530,900,9.540,1000,9.550,"
+    "2026-09-11,15:00:00,00\";\n";
+
+static QVector<Quote> twoQuotes() {
+    return QuoteParser::parseText(QString::fromUtf8(kTwoLines), QuoteFormatOptions{});
+}
+
+static int columnOf(QAbstractItemModel* model, const QString& header) {
+    for (int c = 0; c < model->columnCount(); ++c)
+        if (model->headerData(c, Qt::Horizontal).toString() == header) return c;
+    return -1;
+}
+
+static QString cellText(QAbstractItemModel* model, int row, int col) {
+    return model->data(model->index(row, col), Qt::DisplayRole).toString();
+}
 
 static QJsonObject baseConfig() {
     QJsonObject cfg;
     cfg["checked_codes"] = QJsonArray{"sh600000"};
+    cfg["codes"] = QJsonArray{"sh600000"};
+    cfg["name_visible"] = true;
     cfg["price_visible"] = true;
     cfg["change_pct_visible"] = true;
     cfg["header_visible"] = false;
@@ -35,6 +80,8 @@ static QJsonObject baseConfig() {
 class TestUi : public QObject {
     Q_OBJECT
 private slots:
+    void initTestCase() { qRegisterMetaType<QVector<Quote>>("QVector<Quote>"); }
+
     void singleClickOnViewportHides() {
         ProbeWindow w(baseConfig());
         w.show();
@@ -149,6 +196,233 @@ private slots:
         QVERIFY(!img.isNull());
         const QColor bg = img.pixelColor(w.width() / 2, 4);  // 顶部内边距处（无文字）
         QVERIFY2(bg.alpha() >= 1, "background alpha must be >= 1 to stay hit-testable");
+    }
+
+    void sortFromConfigAppliedOnQuotesReady() {
+        QJsonObject cfg = baseConfig();
+        cfg["sort_key"] = "change_pct";
+        cfg["sort_asc"] = false;
+        ProbeWindow w(cfg);
+        w.show();
+        QTest::qWait(200);
+
+        auto* table = w.findChild<QTableView*>();
+        QVERIFY(table);
+        w.pushQuotes(twoQuotes());
+
+        const int col = columnOf(table->model(), "涨跌幅");
+        QVERIFY(col >= 0);
+        QCOMPARE(cellText(table->model(), 0, col), QString("+2.00%"));
+        QCOMPARE(cellText(table->model(), 1, col), QString("-5.00%"));
+
+        auto* header = table->horizontalHeader();
+        QVERIFY(header->isSortIndicatorShown());
+        QCOMPARE(header->sortIndicatorSection(), col);
+        QCOMPARE(header->sortIndicatorOrder(), Qt::DescendingOrder);
+    }
+
+    void headerClickCyclesSortDescAscOff() {
+        QJsonObject cfg = baseConfig();
+        cfg["header_visible"] = true;  // 表头不可点时点击会落到视图（老行为：隐藏窗口）
+        ProbeWindow w(cfg);
+        w.show();
+        QTest::qWait(200);
+
+        auto* table = w.findChild<QTableView*>();
+        QVERIFY(table);
+        w.pushQuotes(twoQuotes());
+
+        auto* header = table->horizontalHeader();
+        const int col = columnOf(table->model(), "涨跌幅");
+        QVERIFY(col >= 0);
+        // 每次都按当前列宽重算点击位置：排序指示器出现/数据变化都会让列宽微调
+        auto clickHeader = [header, col] {
+            const QPoint p(header->sectionViewportPosition(col) + header->sectionSize(col) / 2,
+                           header->height() / 2);
+            QTest::mouseClick(header, Qt::LeftButton, Qt::NoModifier, p);
+            QTest::qWait(50);
+        };
+
+        clickHeader();  // 第一次 → 降序
+        QCOMPARE(w.currentConfig().value("sort_key").toString(), QString("change_pct"));
+        QCOMPARE(w.currentConfig().value("sort_asc").toBool(), false);
+        QVERIFY(header->isSortIndicatorShown());
+        QCOMPARE(header->sortIndicatorSection(), col);
+        QCOMPARE(cellText(table->model(), 0, col), QString("+2.00%"));
+        QVERIFY2(w.isVisible(), "clicking the header must not hide the window");
+
+        clickHeader();  // 第二次 → 升序
+        QCOMPARE(w.currentConfig().value("sort_key").toString(), QString("change_pct"));
+        QCOMPARE(w.currentConfig().value("sort_asc").toBool(), true);
+        QCOMPARE(header->sortIndicatorOrder(), Qt::AscendingOrder);
+        QCOMPARE(cellText(table->model(), 0, col), QString("-5.00%"));
+        QVERIFY(w.isVisible());
+
+        clickHeader();  // 第三次 → 取消排序，回到自选顺序
+        QCOMPARE(w.currentConfig().value("sort_key").toString(), QString());
+        QVERIFY(!header->isSortIndicatorShown());
+        QCOMPARE(cellText(table->model(), 0, col), QString("+2.00%"));
+        QVERIFY(w.isVisible());
+    }
+
+    void headerClickOnKLineColumnIsIgnored() {
+        QJsonObject cfg = baseConfig();
+        cfg["kline_visible"] = true;
+        cfg["header_visible"] = true;
+        ProbeWindow w(cfg);
+        w.show();
+        QTest::qWait(200);
+
+        auto* table = w.findChild<QTableView*>();
+        QVERIFY(table);
+        w.pushQuotes(twoQuotes());
+
+        auto* header = table->horizontalHeader();
+        const int col = columnOf(table->model(), "K线");
+        QVERIFY(col >= 0);
+        const QPoint pos(header->sectionViewportPosition(col) + header->sectionSize(col) / 2,
+                         header->height() / 2);
+        QTest::mouseClick(header, Qt::LeftButton, Qt::NoModifier, pos);
+        QTest::qWait(50);
+
+        QCOMPARE(w.currentConfig().value("sort_key").toString(), QString());
+        QVERIFY(!header->isSortIndicatorShown());
+        QVERIFY(w.isVisible());
+    }
+
+    void setAliasUpdatesModelImmediately() {
+        ProbeWindow w(baseConfig());
+        w.show();
+        QTest::qWait(200);
+
+        auto* table = w.findChild<QTableView*>();
+        QVERIFY(table);
+        w.pushQuotes(twoQuotes());
+
+        const int col = columnOf(table->model(), "名称");
+        QVERIFY(col >= 0);
+        QCOMPARE(cellText(table->model(), 0, col), QString("浦发银行"));
+
+        w.setAlias("600000", "浦发(老仓)");
+        QCOMPARE(w.currentConfig().value("name_map").toObject().value("sh600000").toString(),
+                 QString("浦发(老仓)"));
+        QCOMPARE(cellText(table->model(), 0, col), QString("浦发(老仓)"));
+
+        w.setAlias("600000", "   ");  // 留空 = 恢复行情名称
+        QCOMPARE(w.currentConfig().value("name_map").toObject().size(), 0);
+        QCOMPARE(cellText(table->model(), 0, col), QString("浦发银行"));
+    }
+
+    void contextMenuOnRowOffersAliasEdit() {
+        ProbeWindow w(baseConfig());
+        w.show();
+        QTest::qWait(200);
+
+        auto* table = w.findChild<QTableView*>();
+        QVERIFY(table);
+        w.pushQuotes(twoQuotes());
+
+        QMenu* menu = w.menuAt(table->viewport()->mapToGlobal(QPoint(5, 5)));
+        QVERIFY(menu);
+        QVERIFY(!menu->actions().isEmpty());
+        QCOMPARE(menu->actions().first()->text(), QString("自定义名称…"));
+        menu->deleteLater();
+
+        QMenu* blank = w.menuAt(w.mapToGlobal(QPoint(2, w.height() - 2)));
+        QVERIFY(blank);
+        QVERIFY(!blank->actions().isEmpty());
+        QVERIFY(blank->actions().first()->text() != QString("自定义名称…"));
+        blank->deleteLater();
+    }
+
+    void settingsNameLengthComboWritesConfig() {
+        ProbeWindow w(baseConfig());
+        w.show();
+        QTest::qWait(150);
+
+        SettingsDialog dlg(&w, &w);
+        dlg.show();
+        QTest::qWait(50);
+        dlg.findChild<QTabWidget*>()->setCurrentIndex(1);  // 显示数据页
+        QTest::qWait(50);
+
+        auto* combo = dlg.findChild<QComboBox*>("nameLengthCombo");
+        QVERIFY(combo);
+        QCOMPARE(combo->count(), 5);  // 全称 / 1~4 字
+        combo->setCurrentIndex(combo->findData(2));
+        QTest::qWait(30);
+        QCOMPARE(w.currentConfig().value("name_length").toInt(), 2);
+        combo->setCurrentIndex(combo->findData(0));
+        QTest::qWait(30);
+        QCOMPARE(w.currentConfig().value("name_length").toInt(), 0);
+        dlg.close();
+    }
+
+    void settingsListShowsAliasAndApplyCodeEditWritesMap() {
+        ProbeWindow w(baseConfig());
+        w.show();
+        QTest::qWait(150);
+
+        SettingsDialog dlg(&w, &w);
+        dlg.show();
+        QTest::qWait(50);
+
+        auto* list = dlg.findChild<QListWidget*>("codeList");
+        QVERIFY(list);
+        QCOMPARE(list->count(), 1);
+        QCOMPARE(list->item(0)->text(), QString("sh600000"));
+
+        QVERIFY(dlg.applyCodeEdit("600000", "浦发(老仓)"));
+        QTest::qWait(30);
+        QCOMPARE(list->item(0)->text(), QString("sh600000  浦发(老仓)"));
+        QCOMPARE(w.currentConfig().value("name_map").toObject().value("sh600000").toString(),
+                 QString("浦发(老仓)"));
+
+        QVERIFY(dlg.applyCodeEdit("600000", ""));
+        QTest::qWait(30);
+        QCOMPARE(list->item(0)->text(), QString("sh600000"));
+        QCOMPARE(w.currentConfig().value("name_map").toObject().size(), 0);
+
+        QVERIFY(!dlg.applyCodeEdit("not-a-code", "x"));  // 非法代码被拒
+        dlg.close();
+    }
+
+    void doubleClickListItemEditsAlias() {
+        ProbeWindow w(baseConfig());
+        w.show();
+        QTest::qWait(150);
+
+        SettingsDialog dlg(&w, &w);
+        dlg.show();
+        QTest::qWait(50);
+
+        auto* list = dlg.findChild<QListWidget*>("codeList");
+        QVERIFY(list);
+        QVERIFY(list->count() == 1);
+
+        bool sawDialog = false;
+        // context object = &dlg：用例提前结束时定时器自动取消，避免 lambda 访问已销毁对象
+        QTimer::singleShot(200, &dlg, [&sawDialog, &dlg] {
+            QWidget* modal = QApplication::activeModalWidget();
+            if (!modal) return;
+            sawDialog = modal->objectName() == QString("codeEditDialog");
+            if (auto* alias = modal->findChild<QLineEdit*>("aliasEdit"))
+                alias->setText(QStringLiteral("浦发(老仓)"));
+            if (auto* box = modal->findChild<QDialogButtonBox*>())
+                if (auto* ok = box->button(QDialogButtonBox::Ok)) ok->click();
+        });
+        // QAbstractItemView 只在 pressedIndex 匹配时才发 doubleClicked，
+        // 因此先 click 补上 press/release，再 dclick（单发 mouseDClick 不会触发）
+        const QRect rect = list->visualItemRect(list->item(0));
+        QTest::mouseClick(list->viewport(), Qt::LeftButton, Qt::NoModifier, rect.center());
+        QTest::mouseDClick(list->viewport(), Qt::LeftButton, Qt::NoModifier, rect.center());
+        QTest::qWait(50);
+
+        QVERIFY(sawDialog);
+        QCOMPARE(list->item(0)->text(), QString("sh600000  浦发(老仓)"));
+        QCOMPARE(w.currentConfig().value("name_map").toObject().value("sh600000").toString(),
+                 QString("浦发(老仓)"));
+        dlg.close();
     }
 
     void settingsDialogBuildsAllTabs() {

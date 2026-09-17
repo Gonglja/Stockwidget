@@ -31,4 +31,12 @@ target_include_directories(test_ui PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_ui PRIVATE Qt6::Test Qt6::Widgets StockWidgetCore)
 add_test(NAME test_ui COMMAND test_ui)
 
+qt_add_executable(test_sorter test_sorter.cpp)
+target_link_libraries(test_sorter PRIVATE Qt6::Test StockWidgetCore)
+add_test(NAME test_sorter COMMAND test_sorter)
+
+qt_add_executable(test_namealias test_namealias.cpp)
+target_link_libraries(test_namealias PRIVATE Qt6::Test StockWidgetCore)
+add_test(NAME test_namealias COMMAND test_namealias)
+
 

@@ -12,6 +12,8 @@ add_library(StockWidgetCore STATIC
     src/data/Schedule.cpp
     src/data/QuoteColumns.cpp
     src/data/QuoteParser.cpp
+    src/data/QuoteSort.cpp
+    src/data/NameAlias.cpp
     src/data/SinaQuoteSource.cpp
     src/data/StockSuggestSource.cpp
     src/app/ConfigStore.cpp

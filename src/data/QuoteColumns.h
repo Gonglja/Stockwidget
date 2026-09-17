@@ -18,6 +18,7 @@ struct ColumnSpec {
 namespace QuoteColumns {
 QStringList allHeaders();
 QString configKeyFor(const QString& header);
+QString sortKeyFor(const QString& header);
 bool isVisible(const QJsonObject& cfg, const QString& header);
 QVector<ColumnSpec> activeColumns(const QJsonObject& cfg);
 }
