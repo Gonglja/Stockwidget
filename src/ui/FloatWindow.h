@@ -8,6 +8,7 @@
 #include <functional>
 
 class QLabel;
+class QMenu;
 class QTableView;
 class QTimer;
 class QVBoxLayout;
@@ -25,6 +26,7 @@ public:
     void setOpenSettingsCallback(std::function<void()> cb) { m_openSettings = std::move(cb); }
     void locate();  // 定位：居中显示并暂时挂起自动隐藏
     void stop();
+    void setAlias(const QString& code, const QString& alias);
 
 signals:
     void configChanged();
@@ -38,8 +40,12 @@ protected:
     void mouseReleaseEvent(QMouseEvent* event) override;
     void mouseDoubleClickEvent(QMouseEvent* event) override;
     void contextMenuEvent(QContextMenuEvent* event) override;
+    QMenu* buildContextMenu(const QPoint& globalPos);
     void showEvent(QShowEvent* event) override;
     void hideEvent(QHideEvent* event) override;
+
+private slots:
+    void onQuotesReady(const QVector<Quote>& quotes);
 
 private:
     void applyStyle();
@@ -51,6 +57,9 @@ private:
     void persistGeometry();
     void setHeaderFlag(const QString& header, bool on);
     void showContextMenu(const QPoint& globalPos);
+    void updateSortIndicator();
+    void cycleSort(int column);
+    void redisplayLastQuotes();
     void collapseToEdge();
     void restoreFromEdge();
     void checkEdgeHover();
@@ -59,7 +68,6 @@ private:
     void evaluateSchedule();
     QColor effectiveBg() const;
     QColor effectiveFg() const;
-    void onQuotesReady(const QVector<Quote>& quotes);
     QString layoutSignature() const;
 
     // 配置状态
@@ -68,6 +76,10 @@ private:
     int m_refreshSeconds = 2;
     bool m_shortCode = false;
     int m_nameLength = 0;
+    QJsonObject m_nameMap;
+    QString m_sortKey;
+    bool m_sortAsc = false;
+    QVector<Quote> m_rawQuotes;
     QuoteFormatOptions::B1S1Display m_b1s1 = QuoteFormatOptions::B1S1Display::Qty;
     bool m_headerVisible = false;
     bool m_gridVisible = false;
@@ -118,4 +130,6 @@ private:
     QPoint m_dragOffset;
     std::function<void()> m_openSettings;
     bool m_columnWidthsFrozen = false;
+    bool m_pressOnHeader = false;
+    int m_headerPressColumn = -1;
 };

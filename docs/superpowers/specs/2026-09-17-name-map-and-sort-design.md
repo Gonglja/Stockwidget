@@ -182,7 +182,7 @@ SinaQuoteSource → QuoteParser（截断行情名称）
 - 指示器：处于排序态时 `setSortIndicator(col, asc ? Ascending : Descending)` + `setSortIndicatorShown(true)`；回到「不排序」时 `setSortIndicatorShown(false)`（不用非法的 `-1` section 去清指示器）
 - K 线列不可排序：点击后排序状态不变，也不显示指示器
 - 表头隐藏（`header_visible=false`）时排序入口一并隐藏，但**排序状态保留**（仍按上次键排序），靠右键「显示表头」恢复入口
-- **事件过滤器改动**：在 `horizontalHeader` 上的左键按下/移动/释放不再进入拖动分支，直接放行给 `QHeaderView`（由 `sectionClicked` 处理）；表头区域双击也不触发「单击隐藏」。表头以外的拖动/单击隐藏/双击隐藏/右键转发逻辑**逐条保持原样**
+- **事件过滤器改动**：**表头左键由 `FloatWindow` 自己接管**而是不依赖 `QHeaderView::sectionClicked` —— 因为 `QHeaderView` 不接受这些事件，Qt 会把它们继续冒泡给 `QTableView`，从而被当成拖动并隐藏窗口（实测日志：`press:QHeaderView` → `press:QTableView`）。具体：表头区域内按下 → 记下区段并吞掉事件（不启动拖动）；抬起时若落在同一区段 → `cycleSort(column)`；移动/双击一并吞掉。表头以外的拖动/单击隐藏/双击隐藏/右键转发逻辑**逐条保持原样**
 
 ---
 

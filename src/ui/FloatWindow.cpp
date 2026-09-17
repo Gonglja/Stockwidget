@@ -3,6 +3,8 @@
 #include "data/Schedule.h"
 #include "data/SinaQuoteSource.h"
 #include "data/StockCode.h"
+#include "data/NameAlias.h"
+#include "data/QuoteSort.h"
 #include "ui/KLineDelegate.h"
 #include "ui/QuoteModel.h"
 
@@ -73,6 +75,8 @@ FloatWindow::FloatWindow(const QJsonObject& cfg, QWidget* parent) : QWidget(pare
     m_table->verticalHeader()->setDefaultSectionSize(1);
     m_table->horizontalHeader()->setStretchLastSection(false);
     m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    m_table->horizontalHeader()->setSectionsClickable(true);
+    m_table->horizontalHeader()->setSortIndicatorShown(false);
     m_vbox->addWidget(m_table);
 
     m_model = new QuoteModel(this);
@@ -159,6 +163,12 @@ void FloatWindow::applyConfig(const QJsonObject& raw) {
     m_refreshSeconds = raw.value(QStringLiteral("refresh_seconds")).toInt(2);
     m_shortCode = raw.value(QStringLiteral("short_code")).toBool(false);
     m_nameLength = raw.value(QStringLiteral("name_length")).toInt(0);
+    const QJsonObject oldNameMap = m_nameMap;
+    const QString oldSortKey = m_sortKey;
+    const bool oldSortAsc = m_sortAsc;
+    m_nameMap = raw.value(QStringLiteral("name_map")).toObject();
+    m_sortKey = raw.value(QStringLiteral("sort_key")).toString();
+    m_sortAsc = raw.value(QStringLiteral("sort_asc")).toBool(false);
     m_b1s1 = b1s1FromString(raw.value(QStringLiteral("b1s1_display"))
                                 .toString(raw.value(QStringLiteral("b1s1_price")).toBool(false)
                                               ? QStringLiteral("price")
@@ -223,6 +233,10 @@ void FloatWindow::applyConfig(const QJsonObject& raw) {
     }
 
     if (oldChecked != m_checkedCodes && isVisible()) refreshNow();
+
+    updateSortIndicator();
+    if (m_nameMap != oldNameMap || m_sortKey != oldSortKey || m_sortAsc != oldSortAsc)
+        redisplayLastQuotes();
 }
 
 void FloatWindow::applyStyle() {
@@ -282,10 +296,70 @@ void FloatWindow::rebuildColumns() {
 
 void FloatWindow::onQuotesReady(const QVector<Quote>& quotes) {
     m_errorLabel->setVisible(false);
+    m_rawQuotes = quotes;
+    redisplayLastQuotes();
+}
+
+void FloatWindow::redisplayLastQuotes() {
+    if (m_rawQuotes.isEmpty()) return;
+    QVector<Quote> quotes = m_rawQuotes;
+    NameAlias::applyAliases(quotes, m_nameMap);
+    QuoteSort::sortQuotes(quotes, m_sortKey, m_sortAsc);
     const int before = m_model->rowCount();
     m_model->setQuotes(quotes);
     if (m_model->rowCount() != before) m_columnWidthsFrozen = false;
     refitSize();
+}
+
+void FloatWindow::updateSortIndicator() {
+    QHeaderView* header = m_table->horizontalHeader();
+    int column = -1;
+    if (!m_sortKey.isEmpty()) {
+        for (int c = 0; c < m_model->columnCount(); ++c) {
+            if (QuoteColumns::sortKeyFor(
+                    m_model->headerData(c, Qt::Horizontal).toString()) == m_sortKey) {
+                column = c;
+                break;
+            }
+        }
+    }
+    if (column < 0) {
+        header->setSortIndicatorShown(false);
+        return;
+    }
+    header->setSortIndicatorShown(true);
+    header->setSortIndicator(column, m_sortAsc ? Qt::AscendingOrder : Qt::DescendingOrder);
+}
+
+void FloatWindow::cycleSort(int column) {
+    const QString header = m_model->headerData(column, Qt::Horizontal).toString();
+    const QString key = QuoteColumns::sortKeyFor(header);
+    if (key.isEmpty()) return;  // K 线不可排序
+    if (m_sortKey != key) {
+        m_sortKey = key;
+        m_sortAsc = false;  // 首次点击 → 降序
+    } else if (!m_sortAsc) {
+        m_sortAsc = true;  // 第二次 → 升序
+    } else {
+        m_sortKey.clear();  // 第三次 → 取消排序，回到自选顺序
+        m_sortAsc = false;
+    }
+    updateSortIndicator();
+    redisplayLastQuotes();
+    notifyChanged();
+}
+
+void FloatWindow::setAlias(const QString& code, const QString& alias) {
+    const auto normalized = StockCode::normalize(code);
+    if (!normalized) return;
+    QJsonObject map = m_nameMap;
+    const QString value = alias.trimmed();
+    if (value.isEmpty()) map.remove(*normalized);
+    else map.insert(*normalized, value);
+    if (map == m_nameMap) return;
+    m_nameMap = map;
+    redisplayLastQuotes();
+    notifyChanged();
 }
 
 void FloatWindow::refreshNow() {
@@ -452,6 +526,9 @@ QJsonObject FloatWindow::currentConfig() const {
     cfg[QStringLiteral("refresh_seconds")] = m_refreshSeconds;
     cfg[QStringLiteral("short_code")] = m_shortCode;
     cfg[QStringLiteral("name_length")] = m_nameLength;
+    cfg[QStringLiteral("name_map")] = m_nameMap;
+    cfg[QStringLiteral("sort_key")] = m_sortKey;
+    cfg[QStringLiteral("sort_asc")] = m_sortAsc;
     cfg[QStringLiteral("b1s1_display")] = b1s1ToString(m_b1s1);
     cfg[QStringLiteral("b1s1_price")] = (m_b1s1 == QuoteFormatOptions::B1S1Display::Price);
     cfg[QStringLiteral("header_visible")] = m_headerVisible;
@@ -527,6 +604,37 @@ void FloatWindow::mouseDoubleClickEvent(QMouseEvent* e) {
 }
 
 bool FloatWindow::eventFilter(QObject* obj, QEvent* event) {
+    // 表头左键由本窗口接管：QHeaderView 不接受这些事件，Qt 会把它继续冒泡给 QTableView，
+    // 从而被当成拖动/单击隐藏（并吞掉 sectionClicked）。这里自己实现三态排序，语义同 sectionClicked。
+    if (obj == m_table->horizontalHeader()) {
+        switch (event->type()) {
+            case QEvent::MouseButtonPress: {
+                auto* me = static_cast<QMouseEvent*>(event);
+                if (me->button() != Qt::LeftButton) break;
+                m_dragging = false;
+                m_pressOnHeader = true;
+                m_headerPressColumn = m_table->horizontalHeader()->logicalIndexAt(
+                    me->position().toPoint().x());
+                return true;
+            }
+            case QEvent::MouseMove:
+                if (m_pressOnHeader) return true;
+                break;
+            case QEvent::MouseButtonRelease: {
+                auto* me = static_cast<QMouseEvent*>(event);
+                if (me->button() != Qt::LeftButton || !m_pressOnHeader) break;
+                m_pressOnHeader = false;
+                const int column = m_table->horizontalHeader()->logicalIndexAt(
+                    me->position().toPoint().x());
+                if (column >= 0 && column == m_headerPressColumn) cycleSort(column);
+                return true;
+            }
+            case QEvent::MouseButtonDblClick:
+                return true;  // 表头上的双击不触发「单击隐藏」
+            default:
+                break;
+        }
+    }
     if (event->type() == QEvent::MouseButtonDblClick) {
         auto* me = static_cast<QMouseEvent*>(event);
         if (me->button() == Qt::LeftButton) {
@@ -580,8 +688,14 @@ void FloatWindow::contextMenuEvent(QContextMenuEvent* event) {
 }
 
 void FloatWindow::showContextMenu(const QPoint& globalPos) {
-    QMenu menu(this);
-    QMenu* cols = menu.addMenu(QStringLiteral("显示指标"));
+    QMenu* menu = buildContextMenu(globalPos);
+    menu->exec(globalPos);
+    menu->deleteLater();
+}
+
+QMenu* FloatWindow::buildContextMenu(const QPoint&) {
+    auto* menu = new QMenu(this);
+    QMenu* cols = menu->addMenu(QStringLiteral("显示指标"));
     for (const QString& header : QuoteColumns::allHeaders()) {
         if (header == QStringLiteral("卖一")) continue;
         if (header == QStringLiteral("买一")) {
@@ -598,7 +712,7 @@ void FloatWindow::showContextMenu(const QPoint& globalPos) {
         connect(act, &QAction::toggled, this,
                 [this, header](bool on) { setHeaderFlag(header, on); });
     }
-    auto* actHeader = menu.addAction(QStringLiteral("显示表头"));
+    auto* actHeader = menu->addAction(QStringLiteral("显示表头"));
     actHeader->setCheckable(true);
     actHeader->setChecked(m_headerVisible);
     connect(actHeader, &QAction::toggled, this, [this](bool on) {
@@ -607,7 +721,7 @@ void FloatWindow::showContextMenu(const QPoint& globalPos) {
         refitSize();
         notifyChanged();
     });
-    auto* actGrid = menu.addAction(QStringLiteral("显示网格"));
+    auto* actGrid = menu->addAction(QStringLiteral("显示网格"));
     actGrid->setCheckable(true);
     actGrid->setChecked(m_gridVisible);
     connect(actGrid, &QAction::toggled, this, [this](bool on) {
@@ -616,7 +730,7 @@ void FloatWindow::showContextMenu(const QPoint& globalPos) {
         applyStyle();
         notifyChanged();
     });
-    auto* actColor = menu.addAction(QStringLiteral("默认颜色"));
+    auto* actColor = menu->addAction(QStringLiteral("默认颜色"));
     actColor->setCheckable(true);
     actColor->setChecked(m_defaultColor);
     connect(actColor, &QAction::toggled, this, [this](bool on) {
@@ -626,13 +740,13 @@ void FloatWindow::showContextMenu(const QPoint& globalPos) {
         applyStyle();
         notifyChanged();
     });
-    menu.addSeparator();
-    menu.addAction(QStringLiteral("设置…"), this, [this] {
+    menu->addSeparator();
+    menu->addAction(QStringLiteral("设置…"), this, [this] {
         if (m_openSettings) m_openSettings();
     });
-    menu.addSeparator();
-    menu.addAction(QStringLiteral("隐藏浮窗"), this, &QWidget::hide);
-    menu.exec(globalPos);
+    menu->addSeparator();
+    menu->addAction(QStringLiteral("隐藏浮窗"), this, &QWidget::hide);
+    return menu;
 }
 
 void FloatWindow::setHeaderFlag(const QString& header, bool on) {

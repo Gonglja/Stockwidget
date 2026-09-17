@@ -783,7 +783,9 @@ static QString cellText(QAbstractItemModel* model, int row, int col) {
     }
 
     void headerClickCyclesSortDescAscOff() {
-        ProbeWindow w(baseConfig());
+        QJsonObject cfg = baseConfig();
+        cfg["header_visible"] = true;  // 表头不可点时点击会落到视图（老行为：隐藏窗口）
+        ProbeWindow w(cfg);
         w.show();
         QTest::qWait(200);
 
@@ -794,11 +796,15 @@ static QString cellText(QAbstractItemModel* model, int row, int col) {
         auto* header = table->horizontalHeader();
         const int col = columnOf(table->model(), "涨跌幅");
         QVERIFY(col >= 0);
-        const QPoint pos(header->sectionViewportPosition(col) + header->sectionSize(col) / 2,
-                         header->height() / 2);
+        // 每次都按当前列宽重算点击位置：排序指示器出现/数据变化都会让列宽微调
+        auto clickHeader = [header, col] {
+            const QPoint p(header->sectionViewportPosition(col) + header->sectionSize(col) / 2,
+                           header->height() / 2);
+            QTest::mouseClick(header, Qt::LeftButton, Qt::NoModifier, p);
+            QTest::qWait(50);
+        };
 
-        QTest::mouseClick(header, Qt::LeftButton, Qt::NoModifier, pos);
-        QTest::qWait(50);
+        clickHeader();  // 第一次 → 降序
         QCOMPARE(w.currentConfig().value("sort_key").toString(), QString("change_pct"));
         QCOMPARE(w.currentConfig().value("sort_asc").toBool(), false);
         QVERIFY(header->isSortIndicatorShown());
@@ -806,24 +812,24 @@ static QString cellText(QAbstractItemModel* model, int row, int col) {
         QCOMPARE(cellText(table->model(), 0, col), QString("+2.00%"));
         QVERIFY2(w.isVisible(), "clicking the header must not hide the window");
 
-        QTest::mouseClick(header, Qt::LeftButton, Qt::NoModifier, pos);
-        QTest::qWait(50);
+        clickHeader();  // 第二次 → 升序
+        QCOMPARE(w.currentConfig().value("sort_key").toString(), QString("change_pct"));
         QCOMPARE(w.currentConfig().value("sort_asc").toBool(), true);
         QCOMPARE(header->sortIndicatorOrder(), Qt::AscendingOrder);
         QCOMPARE(cellText(table->model(), 0, col), QString("-5.00%"));
         QVERIFY(w.isVisible());
 
-        QTest::mouseClick(header, Qt::LeftButton, Qt::NoModifier, pos);
-        QTest::qWait(50);
+        clickHeader();  // 第三次 → 取消排序，回到自选顺序
         QCOMPARE(w.currentConfig().value("sort_key").toString(), QString());
         QVERIFY(!header->isSortIndicatorShown());
-        QCOMPARE(cellText(table->model(), 0, col), QString("+2.00%"));  // 回到自选顺序
+        QCOMPARE(cellText(table->model(), 0, col), QString("+2.00%"));
         QVERIFY(w.isVisible());
     }
 
     void headerClickOnKLineColumnIsIgnored() {
         QJsonObject cfg = baseConfig();
         cfg["kline_visible"] = true;
+        cfg["header_visible"] = true;
         ProbeWindow w(cfg);
         w.show();
         QTest::qWait(200);
@@ -899,6 +905,7 @@ private:
 
 ```cpp
     bool m_pressOnHeader = false;
+    int m_headerPressColumn = -1;
 ```
 
 `src/ui/FloatWindow.cpp`：
@@ -917,11 +924,7 @@ private:
     m_table->horizontalHeader()->setSortIndicatorShown(false);
 ```
 
-3) 构造函数里，`m_table->setModel(m_model);` 之后加入：
-
-```cpp
-    connect(m_table->horizontalHeader(), &QHeaderView::sectionClicked, this, &FloatWindow::cycleSort);
-```
+3) 构造函数里 `m_table->setModel(m_model);` 之后**不需要**任何 connect（表头事件由 `eventFilter` 接管）。
 
 4) `applyConfig()` 里，`m_nameLength = raw.value(QStringLiteral("name_length")).toInt(0);` 之后加入：
 
@@ -1009,30 +1012,46 @@ void FloatWindow::cycleSort(int column) {
 }
 ```
 
-8) `eventFilter()` 函数体最前面加入表头放行分支：
+8) `eventFilter()` 函数体最前面加入表头接管分支：
 
 ```cpp
 bool FloatWindow::eventFilter(QObject* obj, QEvent* event) {
-    // 表头区域放行给 QHeaderView（sectionClicked → 排序），不参与窗口拖动/单击隐藏
-    const QEvent::Type type = event->type();
-    const bool headerMouse =
-        obj == m_table->horizontalHeader() &&
-        (type == QEvent::MouseButtonPress || type == QEvent::MouseButtonDblClick ||
-         type == QEvent::MouseMove || type == QEvent::MouseButtonRelease);
-    if (headerMouse && (m_pressOnHeader || type == QEvent::MouseButtonPress ||
-                        type == QEvent::MouseButtonDblClick)) {
-        if (type == QEvent::MouseButtonPress) {
-            m_dragging = false;
-            m_pressOnHeader = true;
-        } else if (type == QEvent::MouseButtonRelease) {
-            m_pressOnHeader = false;
+    // 表头左键由本窗口接管：QHeaderView 不接受这些事件，Qt 会把它继续冒泡给 QTableView，
+    // 从而被当成拖动/单击隐藏（并吞掉 sectionClicked）。这里自己实现三态排序，语义同 sectionClicked。
+    if (obj == m_table->horizontalHeader()) {
+        switch (event->type()) {
+            case QEvent::MouseButtonPress: {
+                auto* me = static_cast<QMouseEvent*>(event);
+                if (me->button() != Qt::LeftButton) break;
+                m_dragging = false;
+                m_pressOnHeader = true;
+                m_headerPressColumn = m_table->horizontalHeader()->logicalIndexAt(
+                    me->position().toPoint().x());
+                return true;
+            }
+            case QEvent::MouseMove:
+                if (m_pressOnHeader) return true;
+                break;
+            case QEvent::MouseButtonRelease: {
+                auto* me = static_cast<QMouseEvent*>(event);
+                if (me->button() != Qt::LeftButton || !m_pressOnHeader) break;
+                m_pressOnHeader = false;
+                const int column = m_table->horizontalHeader()->logicalIndexAt(
+                    me->position().toPoint().x());
+                if (column >= 0 && column == m_headerPressColumn) cycleSort(column);
+                return true;
+            }
+            case QEvent::MouseButtonDblClick:
+                return true;  // 表头上的双击不触发「单击隐藏」
+            default:
+                break;
         }
-        return false;
     }
     if (event->type() == QEvent::MouseButtonDblClick) {
 ```
 
 > 注意：`eventFilter` 原有分支**一行都不要动**，只新增上面这段。
+> **不要**连接 `QHeaderView::sectionClicked`（会在事件被接管后双重触发，且 Qt 实际上不会发出）。
 
 9) 本任务先给出 `setAlias()` 的可用实现（Task 6 会接入 UI 入口）：
 
