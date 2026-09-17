@@ -1,4 +1,18 @@
-# StockWidget Qt/C++ 重构 — 头脑风暴
+# 名称显示：全称 + 自定义映射 — 头脑风暴
+
+- [x] **1. 探索项目上下文** — 已读 QuoteParser/QuoteColumns/ConfigStore/SettingsDialog（名称截断 name_length 已有解析但无 UI；自选列表只存代码字符串）
+- [x] **2. 澄清问题** — 已确认：方案 C（名称不截断 + 补 `name_length` UI + 新增 `name_map`）；入口 D（设置双击对话框 + 浮窗行内右键）；排序 A（表头三态、持久化、实时重排）
+- [x] **3. 提出 2-3 种方案** — 排序落点三选一，用户选 ① 上游纯函数排序
+- [x] **4. 呈现设计** — 三节（数据与配置层 / UI 交互 / 排序键与测试）逐节确认通过
+- [x] **5. 写设计文档** — docs/superpowers/specs/2026-09-17-name-map-and-sort-design.md（已提交 130373f）
+- [x] **6. 设计自审** — 已内联修正：指示器清除方式、别名与排序交互、查表键规则（4a389df）
+- [x] **7. 用户审阅设计文档** — 用户确认「没问题」
+- [x] **8. 转入 writing-plans** — docs/superpowers/plans/2026-09-17-name-map-and-sort.md（已提交 4fe9593，8 个 TDD 任务）
+- [ ] **9. 实现执行** — 待用户选择：子代理逐任务 / 本会话批量执行
+
+---
+
+# StockWidget Qt/C++ 重构 — 头脑风暴（已完成）
 
 目标：用 Qt C++ 重写当前 PySide6 版本，解决卡顿问题。
 
