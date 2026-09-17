@@ -17,9 +17,11 @@
 #include <QListWidget>
 #include <QMenu>
 #include <QPushButton>
+#include <QTableWidget>
 #include <QTimer>
 #include "data/QuoteParser.h"
 #include "data/QuoteSort.h"
+#include "ui/CustomConfigDialog.h"
 #include "ui/QuoteModel.h"
 
 // Subclass so the context-menu slot doesn't open a modal menu during tests.
@@ -422,6 +424,70 @@ private slots:
         QCOMPARE(list->item(0)->text(), QString("sh600000  浦发(老仓)"));
         QCOMPARE(w.currentConfig().value("name_map").toObject().value("sh600000").toString(),
                  QString("浦发(老仓)"));
+        dlg.close();
+    }
+
+    void customConfigDialogSortAndAliasEdit() {
+        ProbeWindow w(baseConfig());
+        w.show();
+        QTest::qWait(200);
+
+        auto* table = w.findChild<QTableView*>();
+        QVERIFY(table);
+        w.pushQuotes(twoQuotes());
+
+        CustomConfigDialog dlg(&w, &w);
+        dlg.show();
+        QTest::qWait(50);
+        QCOMPARE(dlg.objectName(), QString("customConfigDialog"));
+
+        auto* keyCombo = dlg.findChild<QComboBox*>("sortKeyCombo");
+        auto* dirCombo = dlg.findChild<QComboBox*>("sortDirCombo");
+        QVERIFY(keyCombo);
+        QVERIFY(dirCombo);
+        QCOMPARE(keyCombo->count(), QuoteSort::sortableKeys().size() + 1);  // 不排序 + 11 指标
+        QVERIFY(!dirCombo->isEnabled());  // 未选指标时方向禁用
+
+        const int col = columnOf(table->model(), "涨跌幅");
+        QVERIFY(col >= 0);
+
+        keyCombo->setCurrentIndex(keyCombo->findData(QString("change_pct")));
+        QTest::qWait(50);
+        QCOMPARE(w.currentConfig().value("sort_key").toString(), QString("change_pct"));
+        QVERIFY(dirCombo->isEnabled());
+        QCOMPARE(cellText(table->model(), 0, col), QString("+2.00%"));  // 降序
+
+        dirCombo->setCurrentIndex(dirCombo->findData(true));
+        QTest::qWait(50);
+        QCOMPARE(w.currentConfig().value("sort_asc").toBool(), true);
+        QCOMPARE(cellText(table->model(), 0, col), QString("-5.00%"));  // 升序
+
+        keyCombo->setCurrentIndex(0);  // 不排序 → 回到自选顺序
+        QTest::qWait(50);
+        QCOMPARE(w.currentConfig().value("sort_key").toString(), QString());
+        QVERIFY(!dirCombo->isEnabled());
+        QCOMPARE(cellText(table->model(), 0, col), QString("+2.00%"));
+
+        // 自定义名称：表格第二列可编辑，清空 = 恢复行情名称
+        auto* aliasTable = dlg.findChild<QTableWidget*>("aliasTable");
+        QVERIFY(aliasTable);
+        QCOMPARE(aliasTable->rowCount(), 1);  // baseConfig 的 codes = {sh600000}
+        QCOMPARE(aliasTable->item(0, 0)->text(), QString("sh600000"));
+
+        const int nameCol = columnOf(table->model(), "名称");
+        QVERIFY(nameCol >= 0);
+        QCOMPARE(cellText(table->model(), 0, nameCol), QString("浦发银行"));
+
+        aliasTable->item(0, 1)->setText(QStringLiteral("浦发(老仓)"));
+        QTest::qWait(50);
+        QCOMPARE(w.currentConfig().value("name_map").toObject().value("sh600000").toString(),
+                 QString("浦发(老仓)"));
+        QCOMPARE(cellText(table->model(), 0, nameCol), QString("浦发(老仓)"));
+
+        aliasTable->item(0, 1)->setText(QString());
+        QTest::qWait(50);
+        QCOMPARE(w.currentConfig().value("name_map").toObject().size(), 0);
+        QCOMPARE(cellText(table->model(), 0, nameCol), QString("浦发银行"));
         dlg.close();
     }
 

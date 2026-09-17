@@ -25,6 +25,7 @@ target_link_libraries(StockWidgetCore PUBLIC Qt6::Core Qt6::Gui Qt6::Network Qt6
 qt_add_executable(StockWidget WIN32
     src/main.cpp
     src/app/Application.cpp
+    src/ui/CustomConfigDialog.cpp
     src/ui/FloatWindow.cpp
     src/ui/KLineDelegate.cpp
     src/ui/SettingsDialog.cpp
