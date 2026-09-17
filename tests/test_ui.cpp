@@ -335,6 +335,96 @@ private slots:
         blank->deleteLater();
     }
 
+    void settingsNameLengthComboWritesConfig() {
+        ProbeWindow w(baseConfig());
+        w.show();
+        QTest::qWait(150);
+
+        SettingsDialog dlg(&w, &w);
+        dlg.show();
+        QTest::qWait(50);
+        dlg.findChild<QTabWidget*>()->setCurrentIndex(1);  // 显示数据页
+        QTest::qWait(50);
+
+        auto* combo = dlg.findChild<QComboBox*>("nameLengthCombo");
+        QVERIFY(combo);
+        QCOMPARE(combo->count(), 5);  // 全称 / 1~4 字
+        combo->setCurrentIndex(combo->findData(2));
+        QTest::qWait(30);
+        QCOMPARE(w.currentConfig().value("name_length").toInt(), 2);
+        combo->setCurrentIndex(combo->findData(0));
+        QTest::qWait(30);
+        QCOMPARE(w.currentConfig().value("name_length").toInt(), 0);
+        dlg.close();
+    }
+
+    void settingsListShowsAliasAndApplyCodeEditWritesMap() {
+        ProbeWindow w(baseConfig());
+        w.show();
+        QTest::qWait(150);
+
+        SettingsDialog dlg(&w, &w);
+        dlg.show();
+        QTest::qWait(50);
+
+        auto* list = dlg.findChild<QListWidget*>("codeList");
+        QVERIFY(list);
+        QCOMPARE(list->count(), 1);
+        QCOMPARE(list->item(0)->text(), QString("sh600000"));
+
+        QVERIFY(dlg.applyCodeEdit("600000", "浦发(老仓)"));
+        QTest::qWait(30);
+        QCOMPARE(list->item(0)->text(), QString("sh600000  浦发(老仓)"));
+        QCOMPARE(w.currentConfig().value("name_map").toObject().value("sh600000").toString(),
+                 QString("浦发(老仓)"));
+
+        QVERIFY(dlg.applyCodeEdit("600000", ""));
+        QTest::qWait(30);
+        QCOMPARE(list->item(0)->text(), QString("sh600000"));
+        QCOMPARE(w.currentConfig().value("name_map").toObject().size(), 0);
+
+        QVERIFY(!dlg.applyCodeEdit("not-a-code", "x"));  // 非法代码被拒
+        dlg.close();
+    }
+
+    void doubleClickListItemEditsAlias() {
+        ProbeWindow w(baseConfig());
+        w.show();
+        QTest::qWait(150);
+
+        SettingsDialog dlg(&w, &w);
+        dlg.show();
+        QTest::qWait(50);
+
+        auto* list = dlg.findChild<QListWidget*>("codeList");
+        QVERIFY(list);
+        QVERIFY(list->count() == 1);
+
+        bool sawDialog = false;
+        // context object = &dlg：用例提前结束时定时器自动取消，避免 lambda 访问已销毁对象
+        QTimer::singleShot(200, &dlg, [&sawDialog, &dlg] {
+            QWidget* modal = QApplication::activeModalWidget();
+            if (!modal) return;
+            sawDialog = modal->objectName() == QString("codeEditDialog");
+            if (auto* alias = modal->findChild<QLineEdit*>("aliasEdit"))
+                alias->setText(QStringLiteral("浦发(老仓)"));
+            if (auto* box = modal->findChild<QDialogButtonBox*>())
+                if (auto* ok = box->button(QDialogButtonBox::Ok)) ok->click();
+        });
+        // QAbstractItemView 只在 pressedIndex 匹配时才发 doubleClicked，
+        // 因此先 click 补上 press/release，再 dclick（单发 mouseDClick 不会触发）
+        const QRect rect = list->visualItemRect(list->item(0));
+        QTest::mouseClick(list->viewport(), Qt::LeftButton, Qt::NoModifier, rect.center());
+        QTest::mouseDClick(list->viewport(), Qt::LeftButton, Qt::NoModifier, rect.center());
+        QTest::qWait(50);
+
+        QVERIFY(sawDialog);
+        QCOMPARE(list->item(0)->text(), QString("sh600000  浦发(老仓)"));
+        QCOMPARE(w.currentConfig().value("name_map").toObject().value("sh600000").toString(),
+                 QString("浦发(老仓)"));
+        dlg.close();
+    }
+
     void settingsDialogBuildsAllTabs() {
         ProbeWindow w(baseConfig());
         w.show();

@@ -1353,7 +1353,8 @@ git commit -m "feat(ui): 浮窗行内右键自定义名称（QuoteModel 暴露 c
         QVERIFY(list->count() == 1);
 
         bool sawDialog = false;
-        QTimer::singleShot(200, [&sawDialog] {
+        // context object = &dlg：用例提前结束时定时器自动取消，避免 lambda 访问已销毁对象
+        QTimer::singleShot(200, &dlg, [&sawDialog, &dlg] {
             QWidget* modal = QApplication::activeModalWidget();
             if (!modal) return;
             sawDialog = modal->objectName() == QString("codeEditDialog");
@@ -1362,7 +1363,10 @@ git commit -m "feat(ui): 浮窗行内右键自定义名称（QuoteModel 暴露 c
             if (auto* box = modal->findChild<QDialogButtonBox*>())
                 if (auto* ok = box->button(QDialogButtonBox::Ok)) ok->click();
         });
+        // QAbstractItemView 只在 pressedIndex 匹配时才发 doubleClicked，
+        // 因此先 click 补上 press/release，再 dclick（单发 mouseDClick 不会触发）
         const QRect rect = list->visualItemRect(list->item(0));
+        QTest::mouseClick(list->viewport(), Qt::LeftButton, Qt::NoModifier, rect.center());
         QTest::mouseDClick(list->viewport(), Qt::LeftButton, Qt::NoModifier, rect.center());
         QTest::qWait(50);
 
