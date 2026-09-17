@@ -216,10 +216,12 @@ private slots:
         QVector<Quote> q = threeQuotes();
         QuoteSort::sortQuotes(q, "amount", false);
         QCOMPARE(q.at(0).code, QString("sh600000"));  // 8.16 万
+        QCOMPARE(q.at(1).code, QString("sz000001"));  // 4.75 万
         QCOMPARE(q.at(2).code, QString("sz300136"));  // 1.05 万
         QuoteSort::sortQuotes(q, "avg", true);
         QCOMPARE(q.at(0).code, QString("sz000001"));  // 9.50
-        QCOMPARE(q.at(2).code, QString("sh600000"));  // 10.20
+        QCOMPARE(q.at(1).code, QString("sh600000"));  // 10.20
+        QCOMPARE(q.at(2).code, QString("sz300136"));  // 10.50
     }
     void stableForEqualValues() {
         QVector<Quote> q{makeQuote("sh600000", "A", 10.0, 10.0, 1),
@@ -247,7 +249,9 @@ private slots:
         QCOMPARE(q.at(0).code, QString("sh600000"));
         QCOMPARE(q.at(1).code, QString("sh600001"));
         QuoteSort::sortQuotes(q, "name", true);
-        QCOMPARE(q.at(0).name, QString("甲"));
+        // QString::compare 按 UTF-16 码位比较（不做拼音）：乙 U+4E59 < 甲 U+7532
+        QCOMPARE(q.at(0).name, QString("乙"));
+        QCOMPARE(q.at(1).name, QString("甲"));
     }
     void unknownKeyKeepsOrder() {
         QVector<Quote> q = threeQuotes();
