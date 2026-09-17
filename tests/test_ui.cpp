@@ -290,6 +290,51 @@ private slots:
         QVERIFY(w.isVisible());
     }
 
+    void setAliasUpdatesModelImmediately() {
+        ProbeWindow w(baseConfig());
+        w.show();
+        QTest::qWait(200);
+
+        auto* table = w.findChild<QTableView*>();
+        QVERIFY(table);
+        w.pushQuotes(twoQuotes());
+
+        const int col = columnOf(table->model(), "名称");
+        QVERIFY(col >= 0);
+        QCOMPARE(cellText(table->model(), 0, col), QString("浦发银行"));
+
+        w.setAlias("600000", "浦发(老仓)");
+        QCOMPARE(w.currentConfig().value("name_map").toObject().value("sh600000").toString(),
+                 QString("浦发(老仓)"));
+        QCOMPARE(cellText(table->model(), 0, col), QString("浦发(老仓)"));
+
+        w.setAlias("600000", "   ");  // 留空 = 恢复行情名称
+        QCOMPARE(w.currentConfig().value("name_map").toObject().size(), 0);
+        QCOMPARE(cellText(table->model(), 0, col), QString("浦发银行"));
+    }
+
+    void contextMenuOnRowOffersAliasEdit() {
+        ProbeWindow w(baseConfig());
+        w.show();
+        QTest::qWait(200);
+
+        auto* table = w.findChild<QTableView*>();
+        QVERIFY(table);
+        w.pushQuotes(twoQuotes());
+
+        QMenu* menu = w.menuAt(table->viewport()->mapToGlobal(QPoint(5, 5)));
+        QVERIFY(menu);
+        QVERIFY(!menu->actions().isEmpty());
+        QCOMPARE(menu->actions().first()->text(), QString("自定义名称…"));
+        menu->deleteLater();
+
+        QMenu* blank = w.menuAt(w.mapToGlobal(QPoint(2, w.height() - 2)));
+        QVERIFY(blank);
+        QVERIFY(!blank->actions().isEmpty());
+        QVERIFY(blank->actions().first()->text() != QString("自定义名称…"));
+        blank->deleteLater();
+    }
+
     void settingsDialogBuildsAllTabs() {
         ProbeWindow w(baseConfig());
         w.show();

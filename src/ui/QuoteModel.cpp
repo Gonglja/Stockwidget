@@ -78,6 +78,14 @@ int QuoteModel::klineColumn() const {
     return -1;
 }
 
+QString QuoteModel::quoteCodeAt(int row) const {
+    return (row >= 0 && row < m_quotes.size()) ? m_quotes.at(row).code : QString();
+}
+
+QString QuoteModel::quoteNameAt(int row) const {
+    return (row >= 0 && row < m_quotes.size()) ? m_quotes.at(row).name : QString();
+}
+
 int QuoteModel::rowCount(const QModelIndex& parent) const {
     return parent.isValid() ? 0 : m_quotes.size();
 }

@@ -14,6 +14,8 @@ public:
     void setQuotes(const QVector<Quote>& quotes);
     void setColorScheme(bool defaultColor, const QColor& fg, qreal opacity = 1.0);
     int klineColumn() const;
+    QString quoteCodeAt(int row) const;
+    QString quoteNameAt(int row) const;
 
     int rowCount(const QModelIndex& parent = {}) const override;
     int columnCount(const QModelIndex& parent = {}) const override;

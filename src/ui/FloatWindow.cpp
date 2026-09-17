@@ -17,8 +17,10 @@
 #include <QEnterEvent>
 #include <QFrame>
 #include <QHeaderView>
+#include <QInputDialog>
 #include <QJsonArray>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
@@ -693,8 +695,22 @@ void FloatWindow::showContextMenu(const QPoint& globalPos) {
     menu->deleteLater();
 }
 
-QMenu* FloatWindow::buildContextMenu(const QPoint&) {
+QMenu* FloatWindow::buildContextMenu(const QPoint& globalPos) {
     auto* menu = new QMenu(this);
+    const QModelIndex hit = m_table->indexAt(m_table->viewport()->mapFromGlobal(globalPos));
+    if (hit.isValid()) {
+        const QString code = m_model->quoteCodeAt(hit.row());
+        const QString name = m_model->quoteNameAt(hit.row());
+        menu->addAction(QStringLiteral("自定义名称…"), this, [this, code, name] {
+            bool ok = false;
+            const QString input = QInputDialog::getText(
+                this, QStringLiteral("自定义名称"),
+                QStringLiteral("%1（%2）\n留空 = 使用行情名称").arg(code, name), QLineEdit::Normal,
+                NameAlias::aliasFor(m_nameMap, code), &ok);
+            if (ok) setAlias(code, input);
+        });
+        menu->addSeparator();
+    }
     QMenu* cols = menu->addMenu(QStringLiteral("显示指标"));
     for (const QString& header : QuoteColumns::allHeaders()) {
         if (header == QStringLiteral("卖一")) continue;
