@@ -1,5 +1,7 @@
 #include "app/ConfigStore.h"
 #include "data/QuoteColumns.h"
+#include "data/QuoteSort.h"
+#include "data/StockCode.h"
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -77,5 +79,32 @@ QJsonObject ConfigStore::normalize(const QJsonObject& raw) {
                        ? QStringLiteral("price")
                        : QStringLiteral("qty"));
     }
+
+    // name_map：非 object 丢弃；键归一化；空值剔除
+    if (out.contains(QStringLiteral("name_map"))) {
+        const QJsonValue value = out.value(QStringLiteral("name_map"));
+        if (!value.isObject()) {
+            out.remove(QStringLiteral("name_map"));
+        } else {
+            const QJsonObject src = value.toObject();
+            QJsonObject cleaned;
+            for (auto it = src.begin(); it != src.end(); ++it) {
+                const auto code = StockCode::normalize(it.key());
+                if (!code) continue;
+                const QString alias = it.value().toString().trimmed();
+                if (alias.isEmpty()) continue;
+                cleaned.insert(*code, alias);
+            }
+            out.insert(QStringLiteral("name_map"), cleaned);
+        }
+    }
+
+    // sort_key：白名单兜底；sort_asc 归一化为 bool
+    const QString sortKey = out.value(QStringLiteral("sort_key")).toString();
+    if (!sortKey.isEmpty() && !QuoteSort::isValidKey(sortKey))
+        out.insert(QStringLiteral("sort_key"), QString());
+    if (out.contains(QStringLiteral("sort_asc")))
+        out.insert(QStringLiteral("sort_asc"), out.value(QStringLiteral("sort_asc")).toBool(false));
+
     return out;
 }
