@@ -59,6 +59,21 @@ private slots:
         const QVariant v = m.data(m.index(0, 0), QuoteModel::KLineRole);
         QCOMPARE(v.toList().size(), 5);
     }
+    void mapsHeadersToSortKeys() {
+        QCOMPARE(QuoteColumns::sortKeyFor("代码"), QString("code"));
+        QCOMPARE(QuoteColumns::sortKeyFor("名称"), QString("name"));
+        QCOMPARE(QuoteColumns::sortKeyFor("现价"), QString("price"));
+        QCOMPARE(QuoteColumns::sortKeyFor("涨跌值"), QString("change"));
+        QCOMPARE(QuoteColumns::sortKeyFor("涨跌幅"), QString("change_pct"));
+        QCOMPARE(QuoteColumns::sortKeyFor("买一"), QString("buy1"));
+        QCOMPARE(QuoteColumns::sortKeyFor("卖一"), QString("sell1"));
+        QCOMPARE(QuoteColumns::sortKeyFor("委比"), QString("commi"));
+        QCOMPARE(QuoteColumns::sortKeyFor("成交量"), QString("vol"));
+        QCOMPARE(QuoteColumns::sortKeyFor("成交额"), QString("amount"));
+        QCOMPARE(QuoteColumns::sortKeyFor("均价"), QString("avg"));
+        QVERIFY(QuoteColumns::sortKeyFor("K线").isEmpty());  // K 线不可排序
+        QVERIFY(QuoteColumns::sortKeyFor("不存在").isEmpty());
+    }
     void colorsBySign() {
         QuoteModel m;
         QJsonObject cfg;
