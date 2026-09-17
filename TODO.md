@@ -8,7 +8,17 @@
 - [x] **6. 设计自审** — 已内联修正：指示器清除方式、别名与排序交互、查表键规则（4a389df）
 - [x] **7. 用户审阅设计文档** — 用户确认「没问题」
 - [x] **8. 转入 writing-plans** — docs/superpowers/plans/2026-09-17-name-map-and-sort.md（已提交 4fe9593，8 个 TDD 任务）
-- [ ] **9. 实现执行** — 待用户选择：子代理逐任务 / 本会话批量执行
+- [x] **9. 实现执行** — executing-plans 完成 8/8 任务，全部 TDD；合并入 main（246d4e9）；`scripts\test.cmd` 9/9 测试目标全绿
+
+## 执行记录（与计划的偏差，已同步回计划文档）
+
+| 处 | 偏差 | 原因 |
+|---|---|---|
+| QuoteSort 测试 | 修正 2 处期望笔误 | `amount` 降序 `at(2)` 索引写错；`QString::compare` 是 UTF-16 码位序（乙 U+4E59 < 甲 U+7532），非拼音 |
+| NameAlias 实现 | 改为每次调用只归一化一遍映射表 | 原计划逐行 `normalize()` 是 O(rows×map) 正则开销，1s 刷新间隔下会拖慢 |
+| 表头点击 | 不用 `QHeaderView::sectionClicked`，改由 `FloatWindow::eventFilter` 接管表头左键 | 实测 Qt 会把未被接受的表头事件冒泡给 `QTableView`（`press:QHeaderView` → `press:QTableView`），点击被当成拖动并隐藏窗口 |
+| 表头点击测试 | 需 `header_visible=true`，且每次点击前按当前列宽重算位置 | 表头不可点时点击落到视图；排序指示器/数据变化会让列宽微调 |
+| 设置列表双击测试 | 需 `QTest::mouseClick` 后再 `mouseDClick`，定时器绑 context object | `QAbstractItemView` 仅在 `pressedIndex` 匹配时发 `doubleClicked`；否则定时器会在对象销毁后触发（实测崩溃） |
 
 ---
 
