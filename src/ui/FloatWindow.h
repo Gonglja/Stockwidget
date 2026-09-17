@@ -27,6 +27,7 @@ public:
     void locate();  // 定位：居中显示并暂时挂起自动隐藏
     void stop();
     void setAlias(const QString& code, const QString& alias);
+    void openCustomConfig();  // 右下角配置按钮/测试入口
 
 signals:
     void configChanged();
@@ -34,6 +35,7 @@ signals:
 protected:
     void paintEvent(QPaintEvent* event) override;
     void enterEvent(QEnterEvent* event) override;
+    void leaveEvent(QEvent* event) override;
     bool eventFilter(QObject* obj, QEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
@@ -60,6 +62,8 @@ private:
     void updateSortIndicator();
     void cycleSort(int column);
     void redisplayLastQuotes();
+    void updateGearRect();
+    void updateGearHover(const QPoint& localPos);
     void collapseToEdge();
     void restoreFromEdge();
     void checkEdgeHover();
@@ -132,4 +136,8 @@ private:
     bool m_columnWidthsFrozen = false;
     bool m_pressOnHeader = false;
     int m_headerPressColumn = -1;
+    QRect m_gearRect;
+    bool m_gearVisible = true;
+    bool m_gearHover = false;
+    bool m_pressOnGear = false;
 };

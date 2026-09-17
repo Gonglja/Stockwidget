@@ -10,6 +10,7 @@
 #include <QTime>
 #include "ui/FloatWindow.h"
 #include "ui/SettingsDialog.h"
+#include <QAction>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QHeaderView>
@@ -489,6 +490,47 @@ private slots:
         QCOMPARE(w.currentConfig().value("name_map").toObject().size(), 0);
         QCOMPARE(cellText(table->model(), 0, nameCol), QString("浦发银行"));
         dlg.close();
+    }
+
+    void gearOpensCustomConfigWithoutHiding() {
+        ProbeWindow w(baseConfig());
+        w.show();
+        QTest::qWait(200);
+
+        auto* table = w.findChild<QTableView*>();
+        QVERIFY(table);
+        w.pushQuotes(twoQuotes());
+
+        // 右键菜单里有「显示配置按钮」开关
+        QMenu* menu = w.menuAt(table->viewport()->mapToGlobal(QPoint(5, 5)));
+        QVERIFY(menu);
+        bool hasGearToggle = false;
+        for (QAction* act : menu->actions())
+            if (act->text() == QString("显示配置按钮")) hasGearToggle = true;
+        QVERIFY(hasGearToggle);
+        menu->deleteLater();
+
+        // 齿轮位于窗口右下角（12x12，内缩 4）；点击应打开配置对话框且不隐藏窗口
+        const QPoint gear(w.width() - 4 - 6, w.height() - 4 - 6);
+        QTest::mouseClick(&w, Qt::LeftButton, Qt::NoModifier, gear);
+        QTest::qWait(50);
+        QVERIFY2(w.isVisible(), "clicking the config button must not hide the window");
+        QVERIFY(w.findChild<CustomConfigDialog*>());
+    }
+
+    void gearHiddenFallsBackToHide() {
+        QJsonObject cfg = baseConfig();
+        cfg["gear_visible"] = false;
+        ProbeWindow w(cfg);
+        w.show();
+        QTest::qWait(200);
+
+        const QPoint gear(w.width() - 10, w.height() - 10);
+        QTest::mouseClick(&w, Qt::LeftButton, Qt::NoModifier, gear);
+        QTest::qWait(50);
+
+        QVERIFY(!w.findChild<CustomConfigDialog*>());
+        QVERIFY2(!w.isVisible(), "without the config button, a click still hides the window");
     }
 
     void settingsDialogBuildsAllTabs() {

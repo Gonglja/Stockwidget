@@ -6,6 +6,7 @@
 #include "data/NameAlias.h"
 #include "data/QuoteSort.h"
 #include "ui/KLineDelegate.h"
+#include "ui/CustomConfigDialog.h"
 #include "ui/QuoteModel.h"
 
 #include <QAction>
@@ -35,6 +36,12 @@ namespace {
 // 贴边隐藏后，留在屏幕边缘的可见细条宽度（px）。
 constexpr int kEdgeHandlePx = 4;
 
+// 右下角「配置」按钮：尺寸与内缩（px），以及与窗口内边距的配合
+constexpr int kGearSize = 12;
+constexpr int kGearMargin = 4;
+constexpr int kGearPadRight = kGearSize + 2 * kGearMargin;
+constexpr int kGearPadBottom = kGearSize + 2 * kGearMargin;
+
 QString b1s1ToString(QuoteFormatOptions::B1S1Display d) {
     switch (d) {
         case QuoteFormatOptions::B1S1Display::Price: return QStringLiteral("price");
@@ -58,7 +65,7 @@ FloatWindow::FloatWindow(const QJsonObject& cfg, QWidget* parent) : QWidget(pare
 
     m_panel = new QWidget(this);
     m_vbox = new QVBoxLayout(m_panel);
-    m_vbox->setContentsMargins(10, 6, 10, 6);
+    m_vbox->setContentsMargins(10, 6, kGearPadRight, kGearPadBottom);
     m_vbox->setSpacing(0);
 
     m_errorLabel = new QLabel(QString(), m_panel);
@@ -96,7 +103,11 @@ FloatWindow::FloatWindow(const QJsonObject& cfg, QWidget* parent) : QWidget(pare
 
     QWidget* filtered[] = {m_panel, m_table, m_errorLabel, m_table->viewport(),
                            m_table->horizontalHeader()};
-    for (QWidget* w : filtered) w->installEventFilter(this);
+    for (QWidget* w : filtered) {
+        w->installEventFilter(this);
+        w->setMouseTracking(true);  // 配置按钮的悬停高亮需要无按键时的 MouseMove
+    }
+    setMouseTracking(true);
 
     m_timer = new QTimer(this);
     connect(m_timer, &QTimer::timeout, this, &FloatWindow::refreshNow);
@@ -165,6 +176,8 @@ void FloatWindow::applyConfig(const QJsonObject& raw) {
     m_refreshSeconds = raw.value(QStringLiteral("refresh_seconds")).toInt(2);
     m_shortCode = raw.value(QStringLiteral("short_code")).toBool(false);
     m_nameLength = raw.value(QStringLiteral("name_length")).toInt(0);
+    const bool oldGearVisible = m_gearVisible;
+    m_gearVisible = raw.value(QStringLiteral("gear_visible")).toBool(true);
     const QJsonObject oldNameMap = m_nameMap;
     const QString oldSortKey = m_sortKey;
     const bool oldSortAsc = m_sortAsc;
@@ -239,6 +252,13 @@ void FloatWindow::applyConfig(const QJsonObject& raw) {
     updateSortIndicator();
     if (m_nameMap != oldNameMap || m_sortKey != oldSortKey || m_sortAsc != oldSortAsc)
         redisplayLastQuotes();
+
+    if (m_gearVisible != oldGearVisible) {
+        m_vbox->setContentsMargins(10, 6, m_gearVisible ? kGearPadRight : 10,
+                                   m_gearVisible ? kGearPadBottom : 6);
+        updateGearRect();
+        refitSize();
+    }
 }
 
 void FloatWindow::applyStyle() {
@@ -410,11 +430,17 @@ void FloatWindow::refitSize() {
     m_table->setFixedSize(qMax(1, totalW), qMax(1, totalH));
     m_panel->adjustSize();
     resize(m_panel->size());
+    updateGearRect();
 }
 
 void FloatWindow::enterEvent(QEnterEvent* event) {
     QWidget::enterEvent(event);
     if (m_edgeHide) restoreFromEdge();
+}
+
+void FloatWindow::leaveEvent(QEvent* event) {
+    QWidget::leaveEvent(event);
+    updateGearHover(QPoint(-1, -1));
 }
 
 void FloatWindow::checkEdgeHover() {
@@ -517,7 +543,41 @@ void FloatWindow::paintEvent(QPaintEvent*) {
     p.setBrush(effectiveBg());
     p.setPen(Qt::NoPen);
     p.drawRoundedRect(rect(), 5, 5);
+
+    if (!m_gearVisible) return;
+    if (m_gearRect.isEmpty()) updateGearRect();
+    QColor ring = effectiveFg();
+    ring.setAlpha(m_gearHover ? 255 : 120);
+    QPen pen(ring);
+    pen.setWidthF(1.4);
+    p.setPen(pen);
+    p.setBrush(Qt::NoBrush);
+    p.drawEllipse(m_gearRect.adjusted(1, 1, -1, -1));
+    if (m_gearHover) {
+        p.setPen(Qt::NoPen);
+        p.setBrush(ring);
+        p.drawEllipse(m_gearRect.center(), 2, 2);
+    }
 }
+
+void FloatWindow::updateGearRect() {
+    if (!m_gearVisible || width() <= 0 || height() <= 0) {
+        m_gearRect = QRect();
+        return;
+    }
+    m_gearRect = QRect(width() - kGearSize - kGearMargin, height() - kGearSize - kGearMargin,
+                       kGearSize, kGearSize);
+}
+
+void FloatWindow::updateGearHover(const QPoint& localPos) {
+    const bool hover = m_gearVisible && m_gearRect.contains(localPos);
+    if (hover == m_gearHover) return;
+    m_gearHover = hover;
+    setCursor(hover ? Qt::PointingHandCursor : Qt::ArrowCursor);
+    update();
+}
+
+void FloatWindow::openCustomConfig() { CustomConfigDialog::showFor(this, this); }
 
 void FloatWindow::notifyChanged() { emit configChanged(); }
 
@@ -528,6 +588,7 @@ QJsonObject FloatWindow::currentConfig() const {
     cfg[QStringLiteral("refresh_seconds")] = m_refreshSeconds;
     cfg[QStringLiteral("short_code")] = m_shortCode;
     cfg[QStringLiteral("name_length")] = m_nameLength;
+    cfg[QStringLiteral("gear_visible")] = m_gearVisible;
     cfg[QStringLiteral("name_map")] = m_nameMap;
     cfg[QStringLiteral("sort_key")] = m_sortKey;
     cfg[QStringLiteral("sort_asc")] = m_sortAsc;
@@ -567,6 +628,13 @@ QJsonObject FloatWindow::currentConfig() const {
 }
 
 void FloatWindow::mousePressEvent(QMouseEvent* e) {
+    if (e->button() == Qt::LeftButton && m_gearVisible &&
+        m_gearRect.contains(e->position().toPoint())) {
+        m_dragging = false;
+        m_pressOnGear = true;
+        e->accept();
+        return;
+    }
     if (e->button() == Qt::LeftButton) {
         m_dragging = true;
         m_dragMoved = false;
@@ -588,6 +656,12 @@ void FloatWindow::mouseMoveEvent(QMouseEvent* e) {
 }
 
 void FloatWindow::mouseReleaseEvent(QMouseEvent* e) {
+    if (e->button() == Qt::LeftButton && m_pressOnGear) {
+        m_pressOnGear = false;
+        if (m_gearVisible && m_gearRect.contains(e->position().toPoint())) openCustomConfig();
+        e->accept();
+        return;
+    }
     if (e->button() == Qt::LeftButton && m_dragging) {
         m_dragging = false;
         if (m_dragMoved)
@@ -599,6 +673,11 @@ void FloatWindow::mouseReleaseEvent(QMouseEvent* e) {
 }
 
 void FloatWindow::mouseDoubleClickEvent(QMouseEvent* e) {
+    if (e->button() == Qt::LeftButton && m_gearVisible &&
+        m_gearRect.contains(e->position().toPoint())) {
+        e->accept();  // 配置按钮上的双击不隐藏窗口
+        return;
+    }
     if (e->button() == Qt::LeftButton) {
         m_dragging = false;
         hide();
@@ -606,6 +685,36 @@ void FloatWindow::mouseDoubleClickEvent(QMouseEvent* e) {
 }
 
 bool FloatWindow::eventFilter(QObject* obj, QEvent* event) {
+    // 右下角配置按钮：命中则吞掉事件（不拖动、不单击隐藏），抬起时打开对话框
+    if (m_gearVisible) {
+        const QEvent::Type gearType = event->type();
+        if (gearType == QEvent::MouseMove) {
+            if (auto* w = qobject_cast<QWidget*>(obj)) {
+                auto* me = static_cast<QMouseEvent*>(event);
+                updateGearHover(w->mapTo(this, me->position().toPoint()));
+            }
+        } else if (gearType == QEvent::MouseButtonPress || gearType == QEvent::MouseButtonRelease ||
+                   gearType == QEvent::MouseButtonDblClick) {
+            auto* me = static_cast<QMouseEvent*>(event);
+            auto* w = qobject_cast<QWidget*>(obj);
+            if (w && me->button() == Qt::LeftButton) {
+                const QPoint local = w->mapTo(this, me->position().toPoint());
+                if (gearType == QEvent::MouseButtonPress) {
+                    if (m_gearRect.contains(local)) {
+                        m_dragging = false;
+                        m_pressOnGear = true;
+                        return true;
+                    }
+                } else if (m_pressOnGear) {
+                    if (gearType == QEvent::MouseButtonRelease) {
+                        m_pressOnGear = false;
+                        if (m_gearRect.contains(local)) openCustomConfig();
+                    }
+                    return true;  // 双击齿轮也不触发「单击隐藏」
+                }
+            }
+        }
+    }
     // 表头左键由本窗口接管：QHeaderView 不接受这些事件，Qt 会把它继续冒泡给 QTableView，
     // 从而被当成拖动/单击隐藏（并吞掉 sectionClicked）。这里自己实现三态排序，语义同 sectionClicked。
     if (obj == m_table->horizontalHeader()) {
@@ -754,6 +863,19 @@ QMenu* FloatWindow::buildContextMenu(const QPoint& globalPos) {
         m_columnCfg[QStringLiteral("default_color")] = on;
         applyFontAndMetrics();
         applyStyle();
+        notifyChanged();
+    });
+    auto* actGear = menu->addAction(QStringLiteral("显示配置按钮"));
+    actGear->setCheckable(true);
+    actGear->setChecked(m_gearVisible);
+    connect(actGear, &QAction::toggled, this, [this](bool on) {
+        if (on == m_gearVisible) return;
+        m_gearVisible = on;
+        m_gearHover = false;
+        m_vbox->setContentsMargins(10, 6, on ? kGearPadRight : 10, on ? kGearPadBottom : 6);
+        updateGearRect();
+        refitSize();
+        update();
         notifyChanged();
     });
     menu->addSeparator();
