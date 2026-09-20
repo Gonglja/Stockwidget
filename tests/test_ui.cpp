@@ -18,13 +18,18 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QTableWidget>
+#include <QTextCodec>
 #include <QTreeWidget>
 #include <QTimer>
 #include "data/QuoteParser.h"
 #include "data/QuoteSort.h"
+#include "data/SinaQuoteSource.h"
 #include "ui/CustomConfigDialog.h"
 #include "ui/QuoteModel.h"
 
@@ -56,6 +61,99 @@ static const char* kTwoLines =
 
 static QVector<Quote> twoQuotes() {
     return QuoteParser::parseText(QString::fromUtf8(kTwoLines), QuoteFormatOptions{});
+}
+
+// ---- 测试替身：不联网的行情源（体内容用 GBK 编码，模拟新浪）----
+static QString quoteLine(const QString& code, const QString& name);
+static QByteArray nameBodyFor(const QStringList& codes);
+
+class StubReply : public QNetworkReply {
+public:
+    StubReply(const QNetworkRequest& req, const QByteArray& body, bool autoFinish, QObject* parent)
+        : QNetworkReply(parent), m_body(body) {
+        setRequest(req);
+        setUrl(req.url());
+        open(QIODevice::ReadOnly);
+        setFinished(true);
+        if (autoFinish)
+            QMetaObject::invokeMethod(this, [this] { emit readyRead(); emit finished(); },
+                                      Qt::QueuedConnection);
+    }
+    void abort() override {}
+    qint64 bytesAvailable() const override {
+        return (m_body.size() - m_off) + QNetworkReply::bytesAvailable();
+    }
+    void finishNow() {
+        emit readyRead();
+        emit finished();
+    }
+
+protected:
+    qint64 readData(char* data, qint64 maxSize) override {
+        const qint64 n = qMin(maxSize, qint64(m_body.size()) - m_off);
+        if (n <= 0) return -1;
+        memcpy(data, m_body.constData() + m_off, size_t(n));
+        m_off += n;
+        return n;
+    }
+
+private:
+    QByteArray m_body;
+    qint64 m_off = 0;
+};
+
+class StubNam : public QNetworkAccessManager {
+public:
+    bool manual = false;  // true：不自动 finished，等 flush()
+    QStringList urls;     // 收到的请求 URL
+
+    void flush() {
+        const QVector<StubReply*> pending = m_pending;  // 取副本：回调里可能再发请求
+        m_pending.clear();
+        for (StubReply* r : pending) r->finishNow();
+    }
+
+protected:
+    QNetworkReply* createRequest(Operation, const QNetworkRequest& req, QIODevice*) override {
+        const QString url = req.url().toString();
+        urls << url;
+        const int eq = url.indexOf(QStringLiteral("list="));
+        const QStringList codes =
+            eq >= 0 ? url.mid(eq + 5).split(QLatin1Char(',')) : QStringList{};
+        auto* r = new StubReply(req, nameBodyFor(codes), !manual, this);
+        if (manual) m_pending << r;
+        return r;
+    }
+
+private:
+    QVector<StubReply*> m_pending;
+};
+
+static QByteArray gbk(const QString& s) {
+    QTextCodec* codec = QTextCodec::codecForName("GB18030");
+    return codec ? codec->fromUnicode(s) : s.toUtf8();
+}
+
+// 一条真实格式的新浪行情（名称可指定）
+static QString quoteLine(const QString& code, const QString& name) {
+    return QStringLiteral(
+               "var hq_str_%1=\"%2,10.100,10.000,10.200,10.300,9.900,"
+               "10.190,10.200,8000,81600.000,"
+               "100,10.180,200,10.170,300,10.160,400,10.150,500,10.140,"
+               "600,10.210,700,10.220,800,10.230,900,10.240,1000,10.250,"
+               "2026-09-11,15:00:00,00\";\n")
+        .arg(code, name);
+}
+
+// 按请求的代码列表生成响应体（新浪是批量接口，只返回请求的代码）
+static QByteArray nameBodyFor(const QStringList& codes) {
+    static const QHash<QString, QString> kNames{{"sh600030", "中信证券"},
+                                                {"sh600519", "贵州茅台"},
+                                                {"sz000001", "平安银行"}};
+    QString out;
+    for (const QString& c : codes)
+        if (kNames.contains(c)) out += quoteLine(c, kNames.value(c));
+    return gbk(out);
 }
 
 static int columnOf(QAbstractItemModel* model, const QString& header) {
@@ -427,7 +525,9 @@ private slots:
         w.show();
         QTest::qWait(150);
 
+        StubNam nam;  // 防真实联网：showEvent 会拉一次名称
         SettingsDialog dlg(&w, &w);
+        dlg.nameSource()->setNetworkAccessManager(&nam);
         dlg.show();
         QTest::qWait(50);
         dlg.findChild<QTabWidget*>()->setCurrentIndex(1);  // 显示数据页
@@ -450,7 +550,9 @@ private slots:
         w.show();
         QTest::qWait(150);
 
+        StubNam nam;  // 防真实联网：showEvent 会拉一次名称
         SettingsDialog dlg(&w, &w);
+        dlg.nameSource()->setNetworkAccessManager(&nam);
         dlg.show();
         QTest::qWait(50);
 
@@ -485,7 +587,9 @@ private slots:
         w.pushQuotes(twoQuotes());  // sh600000 → 浦发银行
         QTest::qWait(30);
 
+        StubNam nam;  // 防真实联网：showEvent 会拉一次名称
         SettingsDialog dlg(&w, &w);
+        dlg.nameSource()->setNetworkAccessManager(&nam);
         dlg.show();
         QTest::qWait(50);
         auto* tree = dlg.findChild<QTreeWidget*>("codeList");
@@ -507,7 +611,9 @@ private slots:
         w.show();
         QTest::qWait(150);
 
+        StubNam nam;  // 防真实联网：showEvent 会拉一次名称
         SettingsDialog dlg(&w, &w);
+        dlg.nameSource()->setNetworkAccessManager(&nam);
         dlg.show();
         QTest::qWait(50);
         auto* tree = dlg.findChild<QTreeWidget*>("codeList");
@@ -520,12 +626,141 @@ private slots:
         dlg.close();
     }
 
+    void settingsNamesFetchedOnOpen() {
+        QJsonObject cfg = baseConfig();
+        cfg["codes"] = QJsonArray{"sh600030", "sz000001"};
+        cfg["checked_codes"] = cfg["codes"];
+        ProbeWindow w(cfg);
+        w.show();
+        QTest::qWait(100);
+
+        StubNam nam;
+        SettingsDialog dlg(&w, &w);
+        dlg.nameSource()->setNetworkAccessManager(&nam);
+        dlg.show();
+        QTest::qWait(200);
+
+        QCOMPARE(nam.urls.size(), 1);  // 一次批量请求
+        QVERIFY(nam.urls.first().contains("sh600030"));
+        QVERIFY(nam.urls.first().contains("sz000001"));
+
+        auto* tree = dlg.findChild<QTreeWidget*>("codeList");
+        QVERIFY(tree);
+        QCOMPARE(tree->topLevelItem(0)->text(1), QString("中信证券"));
+        dlg.close();
+    }
+
+    void settingsNamesSkipAliasedRows() {
+        QJsonObject cfg = baseConfig();
+        cfg["codes"] = QJsonArray{"sh600030", "sz000001"};
+        cfg["checked_codes"] = cfg["codes"];
+        cfg["name_map"] = QJsonObject{{"sz000001", "平安(老仓)"}};
+        ProbeWindow w(cfg);
+        w.show();
+        QTest::qWait(100);
+
+        StubNam nam;
+        SettingsDialog dlg(&w, &w);
+        dlg.nameSource()->setNetworkAccessManager(&nam);
+        dlg.show();
+        QTest::qWait(200);
+
+        QCOMPARE(nam.urls.size(), 1);
+        QVERIFY(nam.urls.first().contains("sh600030"));
+        QVERIFY2(!nam.urls.first().contains("sz000001"), "有自定义名称的代码不该进请求");
+
+        auto* tree = dlg.findChild<QTreeWidget*>("codeList");
+        QVERIFY(tree);
+        QCOMPARE(tree->topLevelItem(1)->text(1), QString("平安(老仓)"));
+        dlg.close();
+    }
+
+    void settingsNameRequestedOnManualAdd() {
+        ProbeWindow w(baseConfig());
+        w.show();
+        QTest::qWait(100);
+
+        StubNam nam;
+        SettingsDialog dlg(&w, &w);
+        dlg.nameSource()->setNetworkAccessManager(&nam);
+        dlg.show();
+        QTest::qWait(200);
+        const int before = nam.urls.size();
+
+        QVERIFY(dlg.applyCodeEdit("600519", ""));
+        QTest::qWait(200);
+        QVERIFY2(nam.urls.size() > before, "手输新代码应触发一次名称请求");
+        QVERIFY(nam.urls.last().contains("sh600519"));
+
+        auto* tree = dlg.findChild<QTreeWidget*>("codeList");
+        QVERIFY(tree);
+        QString name;
+        for (int i = 0; i < tree->topLevelItemCount(); ++i)
+            if (tree->topLevelItem(i)->data(0, Qt::UserRole).toString() == "sh600519")
+                name = tree->topLevelItem(i)->text(1);
+        QCOMPARE(name, QString("贵州茅台"));
+        dlg.close();
+    }
+
+    void settingsNamesQueuedWhileFetching() {
+        ProbeWindow w(baseConfig());
+        w.show();
+        QTest::qWait(100);
+
+        StubNam nam;
+        nam.manual = true;  // 第一次请求挂起不返回
+        SettingsDialog dlg(&w, &w);
+        dlg.nameSource()->setNetworkAccessManager(&nam);
+        dlg.show();
+        QTest::qWait(100);
+        QCOMPARE(nam.urls.size(), 1);
+
+        QVERIFY(dlg.applyCodeEdit("600519", ""));
+        QTest::qWait(50);
+        QCOMPARE(nam.urls.size(), 1);  // 仍在等第一次
+
+        nam.flush();
+        QTest::qWait(200);
+        QCOMPARE(nam.urls.size(), 2);  // 第一次返回后立刻补发
+        QVERIFY(nam.urls.last().contains("sh600519"));
+        dlg.close();
+    }
+
+    void settingsNameFromSuggestionNeedsNoRequest() {
+        ProbeWindow w(baseConfig());
+        w.show();
+        QTest::qWait(100);
+
+        StubNam nam;
+        SettingsDialog dlg(&w, &w);
+        dlg.nameSource()->setNetworkAccessManager(&nam);
+        dlg.show();
+        QTest::qWait(200);
+        const int before = nam.urls.size();
+
+        QVERIFY(dlg.addCode("sh601318", "中国平安"));  // 联想结果自带名称
+        QTest::qWait(50);
+        QCOMPARE(nam.urls.size(), before);  // 不产生任何请求
+
+        auto* tree = dlg.findChild<QTreeWidget*>("codeList");
+        QVERIFY(tree);
+        QString name;
+        for (int i = 0; i < tree->topLevelItemCount(); ++i)
+            if (tree->topLevelItem(i)->data(0, Qt::UserRole).toString() == "sh601318")
+                name = tree->topLevelItem(i)->text(1);
+        QCOMPARE(name, QString("中国平安"));
+        QCOMPARE(w.currentConfig().value("codes").toArray().size(), 2);
+        dlg.close();
+    }
+
     void doubleClickListItemEditsAlias() {
         ProbeWindow w(baseConfig());
         w.show();
         QTest::qWait(150);
 
+        StubNam nam;  // 防真实联网：showEvent 会拉一次名称
         SettingsDialog dlg(&w, &w);
+        dlg.nameSource()->setNetworkAccessManager(&nam);
         dlg.show();
         QTest::qWait(50);
 
@@ -668,7 +903,9 @@ private slots:
         w.show();
         QTest::qWait(150);
 
+        StubNam nam;  // 防真实联网：showEvent 会拉一次名称
         SettingsDialog dlg(&w, &w);
+        dlg.nameSource()->setNetworkAccessManager(&nam);
         dlg.show();
         QTest::qWait(50);
         QVERIFY(dlg.isVisible());

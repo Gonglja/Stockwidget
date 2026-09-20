@@ -1,5 +1,6 @@
 #include "ui/SettingsDialog.h"
 #include "data/QuoteColumns.h"
+#include "data/SinaQuoteSource.h"
 #include "data/StockCode.h"
 #include "data/StockSuggestSource.h"
 #include "ui/FloatWindow.h"
@@ -47,10 +48,20 @@ SettingsDialog::SettingsDialog(FloatWindow* win, QWidget* parent) : QDialog(pare
     m_tabs = new QTabWidget(this);
     root->addWidget(m_tabs);
     for (const char* title : kTabTitles) m_tabs->addTab(new QWidget(), QString::fromUtf8(title));
-    connect(m_tabs, &QTabWidget::currentChanged, this, &SettingsDialog::ensureTab);
+    connect(m_tabs, &QTabWidget::currentChanged, this, [this](int index) {
+        ensureTab(index);
+        // 切回「自选列表」时补一次缺失名（也是失败后的重试入口）
+        if (index == 0 && isVisible()) ensureNamesFor(currentCodes());
+    });
     // 名称列回填：行情到达时刷新（别名优先，无别名用行情名）
     connect(m_win, &FloatWindow::quotesUpdated, this, &SettingsDialog::refreshNameColumn,
             Qt::UniqueConnection);
+    m_names = new SinaQuoteSource(this);
+    connect(m_names, &SinaQuoteSource::quotesReady, this, &SettingsDialog::applyNames);
+    connect(m_names, &SinaQuoteSource::error, this, [this](const QString&) {
+        m_nameFetching = false;  // 该批丢弃（静默），继续队列里剩下的
+        pumpNameQueue();
+    });
     ensureTab(0);
     resize(460, 440);
 }
@@ -129,33 +140,12 @@ QWidget* SettingsDialog::buildCodesTab() {
         item->setData(0, Qt::UserRole, code);
         item->setData(0, Qt::UserRole + 1, alias);
         item->setText(0, code);
-        item->setText(1, alias.isEmpty() ? m_win->quoteNameFor(code) : alias);
+        refreshItemName(item);
         item->setCheckState(0, checked.contains(v) ? Qt::Checked : Qt::Unchecked);
     }
 
     auto commit = [this] { commitCodes(); };
-    auto addCode = [this, commit](const QString& codeIn) -> bool {
-        const auto n = StockCode::normalize(codeIn);
-        if (!n) return false;
-        for (int i = 0; i < m_codeList->topLevelItemCount(); ++i) {
-            if (m_codeList->topLevelItem(i)->data(0, Qt::UserRole).toString() == *n) {
-                m_codeList->topLevelItem(i)->setCheckState(0, Qt::Checked);
-                m_codeList->setCurrentItem(m_codeList->topLevelItem(i));
-                commit();
-                return true;
-            }
-        }
-        auto* it = new QTreeWidgetItem(m_codeList);
-        it->setFlags((it->flags() | Qt::ItemIsUserCheckable) & ~Qt::ItemIsEditable);
-        it->setData(0, Qt::UserRole, *n);
-        it->setText(0, *n);
-        it->setText(1, m_win->quoteNameFor(*n));
-        it->setCheckState(0, Qt::Checked);
-        m_codeList->setCurrentItem(it);
-        commit();
-        return true;
-    };
-    auto submitSearch = [this, addCode] {
+    auto submitSearch = [this] {
         const QString text = m_searchEdit->text();
         bool ok = false;
         if (StockCode::normalize(text)) {
@@ -163,7 +153,9 @@ QWidget* SettingsDialog::buildCodesTab() {
         } else {
             const QListWidgetItem* sel = m_suggestList->currentItem();
             if (!sel && m_suggestList->count() > 0) sel = m_suggestList->item(0);
-            if (sel) ok = addCode(sel->data(Qt::UserRole).toString());
+            if (sel)
+                ok = addCode(sel->data(Qt::UserRole).toString(),
+                             sel->data(Qt::UserRole + 1).toString());  // 复用联想名称
         }
         if (ok) {
             m_searchEdit->clear();
@@ -194,6 +186,7 @@ QWidget* SettingsDialog::buildCodesTab() {
                     auto* it = new QListWidgetItem(
                         QStringLiteral("%1  %2").arg(s.name, s.code), m_suggestList);
                     it->setData(Qt::UserRole, s.code);
+                    it->setData(Qt::UserRole + 1, s.name);  // 联想自带名称，选中时零请求
                 }
                 m_suggestList->setVisible(!items.isEmpty());
                 if (items.size() > 0) m_suggestList->setCurrentRow(0);
@@ -204,15 +197,14 @@ QWidget* SettingsDialog::buildCodesTab() {
     });
     connect(m_searchEdit, &QLineEdit::returnPressed, this, [submitSearch] { submitSearch(); });
     connect(btnAddSearch, &QPushButton::clicked, this, [submitSearch] { submitSearch(); });
-    connect(m_suggestList, &QListWidget::itemActivated, this,
-            [this, addCode](QListWidgetItem* it) {
-                if (!it) return;
-                if (addCode(it->data(Qt::UserRole).toString())) {
-                    m_searchEdit->clear();
-                    m_suggestList->clear();
-                    m_suggestList->setVisible(false);
-                }
-            });
+    connect(m_suggestList, &QListWidget::itemActivated, this, [this](QListWidgetItem* it) {
+        if (!it) return;
+        if (addCode(it->data(Qt::UserRole).toString(), it->data(Qt::UserRole + 1).toString())) {
+            m_searchEdit->clear();
+            m_suggestList->clear();
+            m_suggestList->setVisible(false);
+        }
+    });
 
     auto* btnCol = new QVBoxLayout();
     auto addBtn = [&](const QString& text, std::function<void()> fn) {
@@ -260,11 +252,74 @@ QWidget* SettingsDialog::buildCodesTab() {
 void SettingsDialog::refreshNameColumn() {
     if (!m_codeList) return;
     const QSignalBlocker blocker(m_codeList);  // 只改显示，不能触发 commitCodes()
+    for (int i = 0; i < m_codeList->topLevelItemCount(); ++i)
+        refreshItemName(m_codeList->topLevelItem(i));
+}
+
+QString SettingsDialog::nameFor(const QString& code) const {
+    const auto n = StockCode::normalize(code);
+    if (!n) return QString();
+    const QString cached = m_nameCache.value(*n);
+    if (!cached.isEmpty()) return cached;
+    return m_win ? m_win->quoteNameFor(*n) : QString();  // 浮窗兜底
+}
+
+void SettingsDialog::refreshItemName(QTreeWidgetItem* it) {
+    if (!it) return;
+    const QString code = it->data(0, Qt::UserRole).toString();
+    const QString alias = it->data(0, Qt::UserRole + 1).toString().trimmed();
+    it->setText(1, alias.isEmpty() ? nameFor(code) : alias);
+}
+
+QString SettingsDialog::aliasForCode(const QString& code) const {
+    if (!m_codeList) return QString();
     for (int i = 0; i < m_codeList->topLevelItemCount(); ++i) {
-        QTreeWidgetItem* it = m_codeList->topLevelItem(i);
-        if (!it->data(0, Qt::UserRole + 1).toString().trimmed().isEmpty()) continue;  // 别名优先
-        it->setText(1, m_win->quoteNameFor(it->data(0, Qt::UserRole).toString()));
+        const QTreeWidgetItem* it = m_codeList->topLevelItem(i);
+        if (it->data(0, Qt::UserRole).toString() == code)
+            return it->data(0, Qt::UserRole + 1).toString().trimmed();
     }
+    return QString();
+}
+
+QStringList SettingsDialog::currentCodes() const {
+    QStringList out;
+    if (!m_codeList) return out;
+    for (int i = 0; i < m_codeList->topLevelItemCount(); ++i)
+        out << m_codeList->topLevelItem(i)->data(0, Qt::UserRole).toString();
+    return out;
+}
+
+void SettingsDialog::ensureNamesFor(const QStringList& codes) {
+    if (!m_names) return;
+    for (const QString& raw : codes) {
+        const auto n = StockCode::normalize(raw);
+        if (!n) continue;
+        if (!aliasForCode(*n).isEmpty()) continue;  // 有自定义名称：不需请求
+        if (!nameFor(*n).isEmpty()) continue;       // 缓存/浮窗已有
+        if (m_nameQueue.contains(*n)) continue;
+        m_nameQueue << *n;
+    }
+    pumpNameQueue();
+}
+
+void SettingsDialog::pumpNameQueue() {
+    if (m_nameFetching || m_nameQueue.isEmpty()) return;  // 忙时不抢，返回后再 pump
+    m_nameFetching = true;
+    const QStringList batch = m_nameQueue;
+    m_nameQueue.clear();
+    m_names->fetch(batch);  // 一次请求多个代码（新浪批量接口）
+}
+
+void SettingsDialog::applyNames(const QVector<Quote>& quotes) {
+    m_nameFetching = false;
+    for (const Quote& q : quotes) m_nameCache.insert(q.code, q.name);
+    refreshNameColumn();
+    pumpNameQueue();
+}
+
+void SettingsDialog::showEvent(QShowEvent* event) {
+    QDialog::showEvent(event);
+    ensureNamesFor(currentCodes());  // 「上来的时候请求一次」
 }
 
 void SettingsDialog::commitCodes() {
@@ -286,6 +341,37 @@ void SettingsDialog::commitCodes() {
     c[QStringLiteral("checked_codes")] = QJsonArray::fromStringList(checkedList);
     c[QStringLiteral("name_map")] = nameMap;
     m_win->applyConfig(c);
+}
+
+bool SettingsDialog::addCode(const QString& codeIn, const QString& knownName) {
+    if (!m_codeList) return false;
+    const auto n = StockCode::normalize(codeIn);
+    if (!n) return false;
+
+    const QString known = knownName.trimmed();
+    if (!known.isEmpty()) m_nameCache.insert(*n, known);  // 联想结果 → 零请求
+
+    QTreeWidgetItem* found = nullptr;
+    for (int i = 0; i < m_codeList->topLevelItemCount(); ++i) {
+        if (m_codeList->topLevelItem(i)->data(0, Qt::UserRole).toString() == *n) {
+            found = m_codeList->topLevelItem(i);
+            break;
+        }
+    }
+    if (found) {
+        found->setCheckState(0, Qt::Checked);
+    } else {
+        found = new QTreeWidgetItem(m_codeList);
+        found->setFlags((found->flags() | Qt::ItemIsUserCheckable) & ~Qt::ItemIsEditable);
+        found->setData(0, Qt::UserRole, *n);
+        found->setText(0, *n);
+        found->setCheckState(0, Qt::Checked);
+    }
+    m_codeList->setCurrentItem(found);
+    refreshItemName(found);
+    commitCodes();
+    ensureNamesFor({*n});
+    return true;
 }
 
 bool SettingsDialog::applyCodeEdit(const QString& code, const QString& alias, QTreeWidgetItem* item) {
@@ -312,8 +398,9 @@ bool SettingsDialog::applyCodeEdit(const QString& code, const QString& alias, QT
     }
     const QString value = alias.trimmed();
     item->setData(0, Qt::UserRole + 1, value);
-    item->setText(1, value.isEmpty() ? m_win->quoteNameFor(*n) : value);
+    refreshItemName(item);
     m_codeList->setCurrentItem(item);
+    ensureNamesFor({*n});
     commitCodes();
     return true;
 }

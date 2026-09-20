@@ -1,5 +1,7 @@
 #pragma once
+#include "data/Quote.h"
 #include <QDialog>
+#include <QHash>
 #include <QJsonObject>
 
 class FloatWindow;
@@ -17,6 +19,7 @@ class QTimeEdit;
 class QTimer;
 class QTabWidget;
 class StockSuggestSource;
+class SinaQuoteSource;
 
 class SettingsDialog : public QDialog {
     Q_OBJECT
@@ -27,6 +30,15 @@ public:
     // 校验并落库一条「代码 + 别名」；item 为空则按代码查找/新建。非法代码返回 false
     bool applyCodeEdit(const QString& code, const QString& alias, QTreeWidgetItem* item = nullptr);
 
+    // 名称请求源（生产：内部自建；测试：替换其 NAM 以避免联网）
+    SinaQuoteSource* nameSource() const { return m_names; }
+
+    // 添加（或勾选已存在的）代码；knownName 非空时直接用作名称并跳过请求
+    bool addCode(const QString& codeIn, const QString& knownName = QString());
+
+protected:
+    void showEvent(QShowEvent* event) override;
+
 private:
     QWidget* buildCodesTab();
     QWidget* buildDataTab();
@@ -35,6 +47,13 @@ private:
     void ensureTab(int index);
     void commitCodes();
     void refreshNameColumn();
+    void ensureNamesFor(const QStringList& codes);
+    void pumpNameQueue();
+    void applyNames(const QVector<Quote>& quotes);
+    QString nameFor(const QString& code) const;
+    QString aliasForCode(const QString& code) const;
+    void refreshItemName(QTreeWidgetItem* it);
+    QStringList currentCodes() const;
     void editCodeItem(QTreeWidgetItem* item);
     void pickForeground();
     void pickBackground();
@@ -68,5 +87,9 @@ private:
     QListWidget* m_suggestList = nullptr;
     QTimer* m_suggestDebounce = nullptr;
     StockSuggestSource* m_suggest = nullptr;
+    SinaQuoteSource* m_names = nullptr;
+    QHash<QString, QString> m_nameCache;  // code -> 本页抓到的行情名
+    QStringList m_nameQueue;              // 待请求代码
+    bool m_nameFetching = false;          // 队列自有在途标记（fetch() 忙时会静默丢弃）
     int m_builtTabs = 0;
 };
