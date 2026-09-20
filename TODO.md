@@ -63,3 +63,33 @@
 - CMake ✅ / Ninja ✅ / Python 3.12 + pip ✅
 - ❌ Qt 未安装（C:/Qt 不存在）
 - ❌ vcpkg 未安装
+
+---
+
+## 2026-09-20 追加需求：自选列表两列 + 非交易时段提示 + 托盘图标即时生效
+
+- [x] **1. 探索项目上下文** — 读 FloatWindow / SettingsDialog / Application / ConfigStore + 用户实际配置（`fetch_mode=market`、`code_visible=false`、`name_length=4`）
+- [x] **2. 澄清问题** — ①改的是**设置面板**的自选列表并固定两列；名称列 = 别名优先、回落浮窗当前行情名；②提示文案「非交易时段」；③「卡顿」= 托盘图标延迟生效；**浮窗继续受「显示指标」开关控制、不改默认值**
+- [x] **3-4. 方案与设计** — 三处改动（QTreeWidget 两列 / infoLabel 提示 / applyConfig 补 notifyChanged），逐节确认通过
+- [x] **5-7. 设计文档** — `docs/superpowers/specs/2026-09-20-watchlist-columns-info-label-tray-icon-design.md`；用户确认「可以，实现它」
+- [x] **8. 实现计划** — `docs/superpowers/plans/2026-09-20-watchlist-columns-info-label-tray-icon.md`（6 个 TDD 任务）
+- [x] **9. 实现执行** — executing-plans 内联完成 6/6 任务（本环境 `dispatch_agent` 不可用）；全量 `ctest` **9/9 通过**（`test_ui` 30 用例）；视觉验证 4 张截图（ASCII 判读）
+- [x] **10. 收尾** — README 更新；合并回 main
+
+**提交序列（分支 `feat/watchlist-cols-info-tray`）**
+
+| 提交 | 内容 |
+|---|---|
+| `47a48b4` | FloatWindow 暴露 `quoteNameFor()` 与 `quotesUpdated()` 信号 |
+| `a74f25b` | 非请求时段且无数据时显示「非交易时段」提示 |
+| `44b415f` | 图标/快捷键/开机启动改动立即落地（补 `notifyChanged`） |
+| `b4bda51` | 设置面板自选列表改为「代码 / 名称」两列 |
+| `f3c7eda` | 设置面板名称列随行情到达自动回填 |
+
+**执行记录（与计划的偏差）**
+
+| 处 | 偏差 | 原因 |
+|---|---|---|
+| 所有任务的「运行单个用例」验证步骤 | `build\test_ui.exe -v1 <case>` 无任何输出 → 改用 `build\test_ui.exe -o report.txt,txt` 与 `scripts\test.cmd -R test_ui` | Qt 测试 exe 的 stdout 不被 cmd/bash 管道捕获（本机 GUI 子系统行为），退出码仍可信 |
+| Task 4 双击坐标 | `tree->visualItemRect(item, 0)` → `tree->visualItemRect(item)` | `QTreeWidget` 只有单参重载（两参的是 `QTreeView::visualRect(QModelIndex)`） |
+| 执行方式 | 计划推荐 subagent-driven-development，实际用 executing-plans 内联 | 本环境 `dispatch_agent` 连续两次立即失败（exit 1），子代理不可用 |
