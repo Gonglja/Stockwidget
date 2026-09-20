@@ -48,6 +48,9 @@ SettingsDialog::SettingsDialog(FloatWindow* win, QWidget* parent) : QDialog(pare
     root->addWidget(m_tabs);
     for (const char* title : kTabTitles) m_tabs->addTab(new QWidget(), QString::fromUtf8(title));
     connect(m_tabs, &QTabWidget::currentChanged, this, &SettingsDialog::ensureTab);
+    // 名称列回填：行情到达时刷新（别名优先，无别名用行情名）
+    connect(m_win, &FloatWindow::quotesUpdated, this, &SettingsDialog::refreshNameColumn,
+            Qt::UniqueConnection);
     ensureTab(0);
     resize(460, 440);
 }
@@ -252,6 +255,16 @@ QWidget* SettingsDialog::buildCodesTab() {
     connect(m_codeList, &QTreeWidget::itemChanged, this,
             [commit](QTreeWidgetItem*, int) { commit(); });
     return page;
+}
+
+void SettingsDialog::refreshNameColumn() {
+    if (!m_codeList) return;
+    const QSignalBlocker blocker(m_codeList);  // 只改显示，不能触发 commitCodes()
+    for (int i = 0; i < m_codeList->topLevelItemCount(); ++i) {
+        QTreeWidgetItem* it = m_codeList->topLevelItem(i);
+        if (!it->data(0, Qt::UserRole + 1).toString().trimmed().isEmpty()) continue;  // 别名优先
+        it->setText(1, m_win->quoteNameFor(it->data(0, Qt::UserRole).toString()));
+    }
 }
 
 void SettingsDialog::commitCodes() {

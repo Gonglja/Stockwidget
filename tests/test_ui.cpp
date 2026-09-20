@@ -502,6 +502,24 @@ private slots:
         dlg.close();
     }
 
+    void settingsListNameColumnUpdatesWhenQuotesArrive() {
+        ProbeWindow w(baseConfig());
+        w.show();
+        QTest::qWait(150);
+
+        SettingsDialog dlg(&w, &w);
+        dlg.show();
+        QTest::qWait(50);
+        auto* tree = dlg.findChild<QTreeWidget*>("codeList");
+        QVERIFY(tree);
+        QVERIFY2(tree->topLevelItem(0)->text(1).isEmpty(), "行情未到时名称列应为空");
+
+        w.pushQuotes(twoQuotes());
+        QTest::qWait(30);
+        QCOMPARE(tree->topLevelItem(0)->text(1), QString("浦发银行"));  // 无需重开对话框
+        dlg.close();
+    }
+
     void doubleClickListItemEditsAlias() {
         ProbeWindow w(baseConfig());
         w.show();

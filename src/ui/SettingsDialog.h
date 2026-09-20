@@ -34,6 +34,7 @@ private:
     QWidget* buildGeneralTab();
     void ensureTab(int index);
     void commitCodes();
+    void refreshNameColumn();
     void editCodeItem(QTreeWidgetItem* item);
     void pickForeground();
     void pickBackground();
