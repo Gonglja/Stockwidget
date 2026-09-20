@@ -29,8 +29,12 @@ public:
     void setAlias(const QString& code, const QString& alias);
     void openCustomConfig();  // 右下角配置按钮/测试入口
 
+    // 该代码当前的行情名称（原始名，不含用户别名）；无数据或未命中返回空串。
+    QString quoteNameFor(const QString& code) const;
+
 signals:
     void configChanged();
+    void quotesUpdated();  // 行情刷新完成（供设置面板回填名称列）
 
 protected:
     void paintEvent(QPaintEvent* event) override;

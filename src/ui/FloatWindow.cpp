@@ -320,6 +320,7 @@ void FloatWindow::onQuotesReady(const QVector<Quote>& quotes) {
     m_errorLabel->setVisible(false);
     m_rawQuotes = quotes;
     redisplayLastQuotes();
+    emit quotesUpdated();
 }
 
 void FloatWindow::redisplayLastQuotes() {
@@ -382,6 +383,14 @@ void FloatWindow::setAlias(const QString& code, const QString& alias) {
     m_nameMap = map;
     redisplayLastQuotes();
     notifyChanged();
+}
+
+QString FloatWindow::quoteNameFor(const QString& code) const {
+    const auto n = StockCode::normalize(code);
+    if (!n) return QString();
+    for (const Quote& q : m_rawQuotes)
+        if (q.code == *n) return q.name;
+    return QString();
 }
 
 void FloatWindow::refreshNow() {

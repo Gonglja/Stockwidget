@@ -18,6 +18,7 @@
 #include <QListWidget>
 #include <QMenu>
 #include <QPushButton>
+#include <QSignalSpy>
 #include <QTableWidget>
 #include <QTimer>
 #include "data/QuoteParser.h"
@@ -314,6 +315,30 @@ private slots:
         w.setAlias("600000", "   ");  // 留空 = 恢复行情名称
         QCOMPARE(w.currentConfig().value("name_map").toObject().size(), 0);
         QCOMPARE(cellText(table->model(), 0, col), QString("浦发银行"));
+    }
+
+    void quoteNameForReturnsRawNameOnly() {
+        ProbeWindow w(baseConfig());
+        w.show();
+        QTest::qWait(150);
+        QVERIFY2(w.quoteNameFor("sh600000").isEmpty(), "行情未到达时不应有名称");
+
+        w.pushQuotes(twoQuotes());
+        QTest::qWait(30);
+        QCOMPARE(w.quoteNameFor("sh600000"), QString("浦发银行"));
+        QCOMPARE(w.quoteNameFor("600000"), QString("浦发银行"));  // 不带前缀也可查
+        QVERIFY(w.quoteNameFor("sh601318").isEmpty());            // 不在行情里
+        QVERIFY(w.quoteNameFor("bad").isEmpty());                 // 非法代码
+    }
+
+    void quotesReadyEmitsQuotesUpdated() {
+        ProbeWindow w(baseConfig());
+        w.show();
+        QTest::qWait(150);
+        QSignalSpy spy(&w, &FloatWindow::quotesUpdated);
+        w.pushQuotes(twoQuotes());
+        QTest::qWait(30);
+        QCOMPARE(spy.count(), 1);
     }
 
     void contextMenuOnRowOffersAliasEdit() {
