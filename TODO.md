@@ -93,3 +93,29 @@
 | 所有任务的「运行单个用例」验证步骤 | `build\test_ui.exe -v1 <case>` 无任何输出 → 改用 `build\test_ui.exe -o report.txt,txt` 与 `scripts\test.cmd -R test_ui` | Qt 测试 exe 的 stdout 不被 cmd/bash 管道捕获（本机 GUI 子系统行为），退出码仍可信 |
 | Task 4 双击坐标 | `tree->visualItemRect(item, 0)` → `tree->visualItemRect(item)` | `QTreeWidget` 只有单参重载（两参的是 `QTreeView::visualRect(QModelIndex)`） |
 | 执行方式 | 计划推荐 subagent-driven-development，实际用 executing-plans 内联 | 本环境 `dispatch_agent` 连续两次立即失败（exit 1），子代理不可用 |
+
+---
+
+## 2026-09-20 追加需求 2：设置面板名称自主取数
+
+- [x] **1. 探索/澄清** — 根因：名称列只读浮窗（受请求时段限制）；联想接口返回的名称被丢弃；手输代码没有任何取名路径
+- [x] **2-4. 设计与确认** — 设置面板自带行情源（不看请求时段）+ 三触发点 + 别名>本页>浮窗优先级 + 请求队列；用户确认「可以的」
+- [x] **5-7. spec/计划** — `docs/superpowers/specs/2026-09-20-settings-name-fetch-design.md`、`docs/superpowers/plans/2026-09-20-settings-name-fetch.md`
+- [x] **8-9. 实现（分支 `feat/settings-name-fetch`）** — 3 个提交；`test_ui` 35 用例；全量 `ctest` 9/9
+- [x] **10. 真网端到端验证** — 盘外探针（浮窗不请求）：设置面板拉到 `中信证券/中国平安/平安银行`，浮窗名称为空 ✅
+
+**提交序列**
+
+| 提交 | 内容 |
+|---|---|
+| `4b4e28e` | SinaQuoteSource 支持注入 NAM（测试用） |
+| `d9e2f87` | 设置面板自主拉取名称（缓存 + 请求队列 + 三触发点） |
+| `52ae7d0` | 搜索联想自带的名称直接复用（零请求） |
+
+**执行记录（与计划的偏差）**
+
+| 处 | 偏差 | 原因 |
+|---|---|---|
+| `ensureNamesFor` 过滤条件 | 计划只写了「非法/已有名」，实现补了 `aliasForCode()` 别名检查 | 测试 `settingsNamesSkipAliasedRows` 抓出：有自定义名称的代码仍会被请求 |
+| 测试替身 | 计划里 `StubNam` 返回固定 body → 改为**按 URL 的 `list=` 参数**生成响应 | 固定 body 会把没请求的代码也塞进缓存，导致 `settingsNameRequestedOnManualAdd` 假失败（真实新浪只返回请求的代码） |
+| 测试辅助函数 | 用脚本批量替换时误删了 `columnOf`/`cellText`，已恢复 | 替换区间从注释行切到 `baseConfig()`，跨过了这两个函数 |
