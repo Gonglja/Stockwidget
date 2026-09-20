@@ -29,8 +29,12 @@ public:
     void setAlias(const QString& code, const QString& alias);
     void openCustomConfig();  // 右下角配置按钮/测试入口
 
+    // 该代码当前的行情名称（原始名，不含用户别名）；无数据或未命中返回空串。
+    QString quoteNameFor(const QString& code) const;
+
 signals:
     void configChanged();
+    void quotesUpdated();  // 行情刷新完成（供设置面板回填名称列）
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -56,6 +60,7 @@ private:
     void refreshNow();
     void refitSize();
     void notifyChanged();
+    void setInfoText(const QString& text);
     void persistGeometry();
     void setHeaderFlag(const QString& header, bool on);
     void showContextMenu(const QPoint& globalPos);
@@ -113,6 +118,7 @@ private:
     QVBoxLayout* m_vbox = nullptr;
     QTableView* m_table = nullptr;
     QLabel* m_errorLabel = nullptr;
+    QLabel* m_infoLabel = nullptr;
     QuoteModel* m_model = nullptr;
     KLineDelegate* m_klineDelegate = nullptr;
     SinaQuoteSource* m_source = nullptr;

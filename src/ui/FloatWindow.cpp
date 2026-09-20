@@ -73,6 +73,12 @@ FloatWindow::FloatWindow(const QJsonObject& cfg, QWidget* parent) : QWidget(pare
     m_errorLabel->setVisible(false);
     m_vbox->addWidget(m_errorLabel);
 
+    m_infoLabel = new QLabel(QString(), m_panel);
+    m_infoLabel->setObjectName(QStringLiteral("infoLabel"));
+    m_infoLabel->setStyleSheet(QStringLiteral("color: #9aa0a6; padding: 2px 4px;"));
+    m_infoLabel->setVisible(false);
+    m_vbox->addWidget(m_infoLabel);
+
     m_table = new QTableView(m_panel);
     m_table->setFrameShape(QFrame::NoFrame);
     m_table->setShowGrid(false);
@@ -101,7 +107,7 @@ FloatWindow::FloatWindow(const QJsonObject& cfg, QWidget* parent) : QWidget(pare
         refitSize();
     });
 
-    QWidget* filtered[] = {m_panel, m_table, m_errorLabel, m_table->viewport(),
+    QWidget* filtered[] = {m_panel, m_table, m_errorLabel, m_infoLabel, m_table->viewport(),
                            m_table->horizontalHeader()};
     for (QWidget* w : filtered) {
         w->installEventFilter(this);
@@ -177,6 +183,9 @@ void FloatWindow::applyConfig(const QJsonObject& raw) {
     m_shortCode = raw.value(QStringLiteral("short_code")).toBool(false);
     m_nameLength = raw.value(QStringLiteral("name_length")).toInt(0);
     const bool oldGearVisible = m_gearVisible;
+    const QString oldAppIcon = m_appIcon;
+    const QString oldHotkey = m_hotkey;
+    const bool oldStartOnBoot = m_startOnBoot;
     m_gearVisible = raw.value(QStringLiteral("gear_visible")).toBool(true);
     const QJsonObject oldNameMap = m_nameMap;
     const QString oldSortKey = m_sortKey;
@@ -259,6 +268,11 @@ void FloatWindow::applyConfig(const QJsonObject& raw) {
         updateGearRect();
         refitSize();
     }
+
+    // 图标/快捷键/开机启动的落地入口在 Application::saveConfig()，
+    // 这里必须立即 notifyChanged()，否则用户改完要等下一次任意事件才生效。
+    if (m_appIcon != oldAppIcon || m_hotkey != oldHotkey || m_startOnBoot != oldStartOnBoot)
+        notifyChanged();
 }
 
 void FloatWindow::applyStyle() {
@@ -318,8 +332,10 @@ void FloatWindow::rebuildColumns() {
 
 void FloatWindow::onQuotesReady(const QVector<Quote>& quotes) {
     m_errorLabel->setVisible(false);
+    setInfoText(QString());
     m_rawQuotes = quotes;
     redisplayLastQuotes();
+    emit quotesUpdated();
 }
 
 void FloatWindow::redisplayLastQuotes() {
@@ -384,9 +400,30 @@ void FloatWindow::setAlias(const QString& code, const QString& alias) {
     notifyChanged();
 }
 
+QString FloatWindow::quoteNameFor(const QString& code) const {
+    const auto n = StockCode::normalize(code);
+    if (!n) return QString();
+    for (const Quote& q : m_rawQuotes)
+        if (q.code == *n) return q.name;
+    return QString();
+}
+
+void FloatWindow::setInfoText(const QString& text) {
+    if (!m_infoLabel) return;
+    const bool wasVisible = m_infoLabel->isVisible();
+    m_infoLabel->setText(text);
+    m_infoLabel->setVisible(!text.isEmpty());
+    if (wasVisible != m_infoLabel->isVisible()) refitSize();
+}
+
 void FloatWindow::refreshNow() {
     if (!isVisible()) return;
-    if (!inFetchWindow()) return;  // 非请求时段：跳过拉取，保留上次数据
+    if (!inFetchWindow()) {
+        // 非请求时段：保留上次数据；从没拿到过数据时给提示，避免出现一个空框。
+        if (m_rawQuotes.isEmpty()) setInfoText(QStringLiteral("非交易时段"));
+        return;
+    }
+    setInfoText(QString());  // 进入请求时段：先撤掉提示
     m_source->fetch(m_checkedCodes);
 }
 
