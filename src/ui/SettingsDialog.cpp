@@ -13,6 +13,7 @@
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QGroupBox>
+#include <QHeaderView>
 #include <QHBoxLayout>
 #include <QJsonArray>
 #include <QKeySequence>
@@ -28,6 +29,7 @@
 #include <QTime>
 #include <QTimeEdit>
 #include <QTimer>
+#include <QTreeWidget>
 #include <QVBoxLayout>
 #include <functional>
 
@@ -101,9 +103,16 @@ QWidget* SettingsDialog::buildCodesTab() {
     outer->addWidget(m_suggestList);
 
     auto* h = new QHBoxLayout();
-    m_codeList = new QListWidget(group);
+    m_codeList = new QTreeWidget(group);
     m_codeList->setObjectName(QStringLiteral("codeList"));
-    m_codeList->setFixedWidth(150);
+    m_codeList->setColumnCount(2);
+    m_codeList->setHeaderLabels({QStringLiteral("代码"), QStringLiteral("名称")});
+    m_codeList->setRootIsDecorated(false);
+    m_codeList->setUniformRowHeights(true);
+    m_codeList->setAllColumnsShowFocus(false);
+    m_codeList->header()->setSectionResizeMode(0, QHeaderView::Interactive);
+    m_codeList->setColumnWidth(0, 110);
+    m_codeList->header()->setSectionResizeMode(1, QHeaderView::Stretch);
 
     const QJsonObject cfg = m_win->currentConfig();
     const QJsonArray codes = cfg.value(QStringLiteral("codes")).toArray();
@@ -112,30 +121,33 @@ QWidget* SettingsDialog::buildCodesTab() {
     for (const QJsonValue& v : codes) {
         const QString code = v.toString();
         const QString alias = nameMap.value(code).toString();
-        auto* item = new QListWidgetItem(
-            alias.isEmpty() ? code : QStringLiteral("%1  %2").arg(code, alias), m_codeList);
+        auto* item = new QTreeWidgetItem(m_codeList);
         item->setFlags((item->flags() | Qt::ItemIsUserCheckable) & ~Qt::ItemIsEditable);
-        item->setData(Qt::UserRole, code);
-        item->setData(Qt::UserRole + 1, alias);
-        item->setCheckState(checked.contains(v) ? Qt::Checked : Qt::Unchecked);
+        item->setData(0, Qt::UserRole, code);
+        item->setData(0, Qt::UserRole + 1, alias);
+        item->setText(0, code);
+        item->setText(1, alias.isEmpty() ? m_win->quoteNameFor(code) : alias);
+        item->setCheckState(0, checked.contains(v) ? Qt::Checked : Qt::Unchecked);
     }
 
     auto commit = [this] { commitCodes(); };
     auto addCode = [this, commit](const QString& codeIn) -> bool {
         const auto n = StockCode::normalize(codeIn);
         if (!n) return false;
-        for (int i = 0; i < m_codeList->count(); ++i) {
-            if (m_codeList->item(i)->data(Qt::UserRole).toString() == *n) {
-                m_codeList->item(i)->setCheckState(Qt::Checked);
-                m_codeList->setCurrentRow(i);
+        for (int i = 0; i < m_codeList->topLevelItemCount(); ++i) {
+            if (m_codeList->topLevelItem(i)->data(0, Qt::UserRole).toString() == *n) {
+                m_codeList->topLevelItem(i)->setCheckState(0, Qt::Checked);
+                m_codeList->setCurrentItem(m_codeList->topLevelItem(i));
                 commit();
                 return true;
             }
         }
-        auto* it = new QListWidgetItem(*n, m_codeList);
+        auto* it = new QTreeWidgetItem(m_codeList);
         it->setFlags((it->flags() | Qt::ItemIsUserCheckable) & ~Qt::ItemIsEditable);
-        it->setData(Qt::UserRole, *n);
-        it->setCheckState(Qt::Checked);
+        it->setData(0, Qt::UserRole, *n);
+        it->setText(0, *n);
+        it->setText(1, m_win->quoteNameFor(*n));
+        it->setCheckState(0, Qt::Checked);
         m_codeList->setCurrentItem(it);
         commit();
         return true;
@@ -207,24 +219,25 @@ QWidget* SettingsDialog::buildCodesTab() {
         btnCol->addWidget(b);
     };
     addBtn(QStringLiteral("删除"), [this, commit] {
-        delete m_codeList->takeItem(m_codeList->currentRow());
+        const int r = m_codeList->indexOfTopLevelItem(m_codeList->currentItem());
+        if (r >= 0) delete m_codeList->takeTopLevelItem(r);
         commit();
     });
     addBtn(QStringLiteral("上移"), [this, commit] {
-        const int r = m_codeList->currentRow();
+        const int r = m_codeList->indexOfTopLevelItem(m_codeList->currentItem());
         if (r > 0) {
-            auto* it = m_codeList->takeItem(r);
-            m_codeList->insertItem(r - 1, it);
-            m_codeList->setCurrentRow(r - 1);
+            auto* it = m_codeList->takeTopLevelItem(r);
+            m_codeList->insertTopLevelItem(r - 1, it);
+            m_codeList->setCurrentItem(it);
             commit();
         }
     });
     addBtn(QStringLiteral("下移"), [this, commit] {
-        const int r = m_codeList->currentRow();
-        if (r >= 0 && r < m_codeList->count() - 1) {
-            auto* it = m_codeList->takeItem(r);
-            m_codeList->insertItem(r + 1, it);
-            m_codeList->setCurrentRow(r + 1);
+        const int r = m_codeList->indexOfTopLevelItem(m_codeList->currentItem());
+        if (r >= 0 && r < m_codeList->topLevelItemCount() - 1) {
+            auto* it = m_codeList->takeTopLevelItem(r);
+            m_codeList->insertTopLevelItem(r + 1, it);
+            m_codeList->setCurrentItem(it);
             commit();
         }
     });
@@ -234,9 +247,10 @@ QWidget* SettingsDialog::buildCodesTab() {
     h->addLayout(btnCol);
     outer->addLayout(h, 1);
     lay->addWidget(group);
-    connect(m_codeList, &QListWidget::itemDoubleClicked, this,
-            [this](QListWidgetItem* it) { editCodeItem(it); });
-    connect(m_codeList, &QListWidget::itemChanged, this, [commit](QListWidgetItem*) { commit(); });
+    connect(m_codeList, &QTreeWidget::itemDoubleClicked, this,
+            [this](QTreeWidgetItem* it, int) { editCodeItem(it); });
+    connect(m_codeList, &QTreeWidget::itemChanged, this,
+            [commit](QTreeWidgetItem*, int) { commit(); });
     return page;
 }
 
@@ -244,13 +258,13 @@ void SettingsDialog::commitCodes() {
     if (!m_codeList) return;
     QStringList list, checkedList;
     QJsonObject nameMap = m_win->currentConfig().value(QStringLiteral("name_map")).toObject();
-    for (int i = 0; i < m_codeList->count(); ++i) {
-        const QListWidgetItem* it = m_codeList->item(i);
-        const auto n = StockCode::normalize(it->data(Qt::UserRole).toString());
+    for (int i = 0; i < m_codeList->topLevelItemCount(); ++i) {
+        const QTreeWidgetItem* it = m_codeList->topLevelItem(i);
+        const auto n = StockCode::normalize(it->data(0, Qt::UserRole).toString());
         if (!n) continue;
         list << *n;
-        if (it->checkState() == Qt::Checked) checkedList << *n;
-        const QString alias = it->data(Qt::UserRole + 1).toString().trimmed();
+        if (it->checkState(0) == Qt::Checked) checkedList << *n;
+        const QString alias = it->data(0, Qt::UserRole + 1).toString().trimmed();
         if (alias.isEmpty()) nameMap.remove(*n);
         else nameMap.insert(*n, alias);
     }
@@ -261,45 +275,46 @@ void SettingsDialog::commitCodes() {
     m_win->applyConfig(c);
 }
 
-bool SettingsDialog::applyCodeEdit(const QString& code, const QString& alias, QListWidgetItem* item) {
+bool SettingsDialog::applyCodeEdit(const QString& code, const QString& alias, QTreeWidgetItem* item) {
     if (!m_codeList) return false;
     const auto n = StockCode::normalize(code);
     if (!n) return false;
 
-    if (item) item->setData(Qt::UserRole, *n);
+    if (item) item->setData(0, Qt::UserRole, *n);
     if (!item) {
-        for (int i = 0; i < m_codeList->count(); ++i) {
-            if (m_codeList->item(i)->data(Qt::UserRole).toString() == *n) {
-                item = m_codeList->item(i);
+        for (int i = 0; i < m_codeList->topLevelItemCount(); ++i) {
+            if (m_codeList->topLevelItem(i)->data(0, Qt::UserRole).toString() == *n) {
+                item = m_codeList->topLevelItem(i);
                 break;
             }
         }
     }
     const QSignalBlocker blocker(m_codeList);  // 避免 setText 触发 itemChanged 递归提交
     if (!item) {
-        item = new QListWidgetItem(*n, m_codeList);
+        item = new QTreeWidgetItem(m_codeList);
         item->setFlags((item->flags() | Qt::ItemIsUserCheckable) & ~Qt::ItemIsEditable);
-        item->setCheckState(Qt::Checked);
-        item->setData(Qt::UserRole, *n);
+        item->setCheckState(0, Qt::Checked);
+        item->setData(0, Qt::UserRole, *n);
+        item->setText(0, *n);
     }
     const QString value = alias.trimmed();
-    item->setData(Qt::UserRole + 1, value);
-    item->setText(value.isEmpty() ? *n : QStringLiteral("%1  %2").arg(*n, value));
+    item->setData(0, Qt::UserRole + 1, value);
+    item->setText(1, value.isEmpty() ? m_win->quoteNameFor(*n) : value);
     m_codeList->setCurrentItem(item);
     commitCodes();
     return true;
 }
 
-void SettingsDialog::editCodeItem(QListWidgetItem* item) {
+void SettingsDialog::editCodeItem(QTreeWidgetItem* item) {
     if (!item || !m_codeList) return;
 
     QDialog dlg(this);
     dlg.setObjectName(QStringLiteral("codeEditDialog"));
     dlg.setWindowTitle(QStringLiteral("股票"));
     auto* form = new QFormLayout(&dlg);
-    auto* codeEdit = new QLineEdit(item->data(Qt::UserRole).toString(), &dlg);
+    auto* codeEdit = new QLineEdit(item->data(0, Qt::UserRole).toString(), &dlg);
     codeEdit->setObjectName(QStringLiteral("codeEdit"));
-    auto* aliasEdit = new QLineEdit(item->data(Qt::UserRole + 1).toString(), &dlg);
+    auto* aliasEdit = new QLineEdit(item->data(0, Qt::UserRole + 1).toString(), &dlg);
     aliasEdit->setObjectName(QStringLiteral("aliasEdit"));
     aliasEdit->setPlaceholderText(QStringLiteral("留空 = 使用行情名称"));
     form->addRow(QStringLiteral("代码"), codeEdit);

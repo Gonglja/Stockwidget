@@ -9,6 +9,8 @@ class QKeySequenceEdit;
 class QLineEdit;
 class QListWidget;
 class QListWidgetItem;
+class QTreeWidget;
+class QTreeWidgetItem;
 class QPushButton;
 class QSlider;
 class QTimeEdit;
@@ -23,7 +25,7 @@ public:
     static SettingsDialog* showFor(FloatWindow* win, QWidget* parent = nullptr);
 
     // 校验并落库一条「代码 + 别名」；item 为空则按代码查找/新建。非法代码返回 false
-    bool applyCodeEdit(const QString& code, const QString& alias, QListWidgetItem* item = nullptr);
+    bool applyCodeEdit(const QString& code, const QString& alias, QTreeWidgetItem* item = nullptr);
 
 private:
     QWidget* buildCodesTab();
@@ -32,14 +34,14 @@ private:
     QWidget* buildGeneralTab();
     void ensureTab(int index);
     void commitCodes();
-    void editCodeItem(QListWidgetItem* item);
+    void editCodeItem(QTreeWidgetItem* item);
     void pickForeground();
     void pickBackground();
     void pickIcon();
 
     FloatWindow* m_win = nullptr;
     QTabWidget* m_tabs = nullptr;
-    QListWidget* m_codeList = nullptr;
+    QTreeWidget* m_codeList = nullptr;
     QCheckBox* m_tableHeader = nullptr;
     QCheckBox* m_tableGrid = nullptr;
     QCheckBox* m_defaultColor = nullptr;

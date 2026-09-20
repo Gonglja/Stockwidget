@@ -21,6 +21,7 @@
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QTableWidget>
+#include <QTreeWidget>
 #include <QTimer>
 #include "data/QuoteParser.h"
 #include "data/QuoteSort.h"
@@ -453,23 +454,51 @@ private slots:
         dlg.show();
         QTest::qWait(50);
 
-        auto* list = dlg.findChild<QListWidget*>("codeList");
-        QVERIFY(list);
-        QCOMPARE(list->count(), 1);
-        QCOMPARE(list->item(0)->text(), QString("sh600000"));
+        auto* tree = dlg.findChild<QTreeWidget*>("codeList");
+        QVERIFY(tree);
+        QCOMPARE(tree->columnCount(), 2);
+        QCOMPARE(tree->headerItem()->text(0), QString("代码"));
+        QCOMPARE(tree->headerItem()->text(1), QString("名称"));
+        QCOMPARE(tree->topLevelItemCount(), 1);
+        QCOMPARE(tree->topLevelItem(0)->text(0), QString("sh600000"));
+        QVERIFY2(tree->topLevelItem(0)->text(1).isEmpty(), "无别名且无行情时名称列应为空");
 
         QVERIFY(dlg.applyCodeEdit("600000", "浦发(老仓)"));
         QTest::qWait(30);
-        QCOMPARE(list->item(0)->text(), QString("sh600000  浦发(老仓)"));
+        QCOMPARE(tree->topLevelItem(0)->text(1), QString("浦发(老仓)"));
         QCOMPARE(w.currentConfig().value("name_map").toObject().value("sh600000").toString(),
                  QString("浦发(老仓)"));
 
         QVERIFY(dlg.applyCodeEdit("600000", ""));
         QTest::qWait(30);
-        QCOMPARE(list->item(0)->text(), QString("sh600000"));
+        QVERIFY(tree->topLevelItem(0)->text(1).isEmpty());
         QCOMPARE(w.currentConfig().value("name_map").toObject().size(), 0);
 
         QVERIFY(!dlg.applyCodeEdit("not-a-code", "x"));  // 非法代码被拒
+        dlg.close();
+    }
+
+    void settingsListNameColumnFallsBackToQuoteName() {
+        ProbeWindow w(baseConfig());
+        w.show();
+        QTest::qWait(150);
+        w.pushQuotes(twoQuotes());  // sh600000 → 浦发银行
+        QTest::qWait(30);
+
+        SettingsDialog dlg(&w, &w);
+        dlg.show();
+        QTest::qWait(50);
+        auto* tree = dlg.findChild<QTreeWidget*>("codeList");
+        QVERIFY(tree);
+        QCOMPARE(tree->topLevelItem(0)->text(1), QString("浦发银行"));  // 无别名 → 行情名
+
+        QVERIFY(dlg.applyCodeEdit("600000", "老仓"));
+        QTest::qWait(30);
+        QCOMPARE(tree->topLevelItem(0)->text(1), QString("老仓"));      // 别名优先
+
+        QVERIFY(dlg.applyCodeEdit("600000", ""));
+        QTest::qWait(30);
+        QCOMPARE(tree->topLevelItem(0)->text(1), QString("浦发银行"));  // 清别名 → 回落行情名
         dlg.close();
     }
 
@@ -482,9 +511,9 @@ private slots:
         dlg.show();
         QTest::qWait(50);
 
-        auto* list = dlg.findChild<QListWidget*>("codeList");
-        QVERIFY(list);
-        QVERIFY(list->count() == 1);
+        auto* tree = dlg.findChild<QTreeWidget*>("codeList");
+        QVERIFY(tree);
+        QVERIFY(tree->topLevelItemCount() == 1);
 
         bool sawDialog = false;
         // context object = &dlg：用例提前结束时定时器自动取消，避免 lambda 访问已销毁对象
@@ -499,13 +528,13 @@ private slots:
         });
         // QAbstractItemView 只在 pressedIndex 匹配时才发 doubleClicked，
         // 因此先 click 补上 press/release，再 dclick（单发 mouseDClick 不会触发）
-        const QRect rect = list->visualItemRect(list->item(0));
-        QTest::mouseClick(list->viewport(), Qt::LeftButton, Qt::NoModifier, rect.center());
-        QTest::mouseDClick(list->viewport(), Qt::LeftButton, Qt::NoModifier, rect.center());
+        const QRect rect = tree->visualItemRect(tree->topLevelItem(0));
+        QTest::mouseClick(tree->viewport(), Qt::LeftButton, Qt::NoModifier, rect.center());
+        QTest::mouseDClick(tree->viewport(), Qt::LeftButton, Qt::NoModifier, rect.center());
         QTest::qWait(50);
 
         QVERIFY(sawDialog);
-        QCOMPARE(list->item(0)->text(), QString("sh600000  浦发(老仓)"));
+        QCOMPARE(tree->topLevelItem(0)->text(1), QString("浦发(老仓)"));
         QCOMPARE(w.currentConfig().value("name_map").toObject().value("sh600000").toString(),
                  QString("浦发(老仓)"));
         dlg.close();
