@@ -1,0 +1,32 @@
+// 由 CMakeLists.txt 生成（@PROJECT_VERSION@ 等由 configure_file 代入）。
+// 作用：让 exe 的「属性 → 详细信息」显示版本号/产品名/版权。
+#include <winres.h>
+#pragma code_page(65001)  // 本文件是 UTF-8（含中文描述）
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION     @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+PRODUCTVERSION  @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
+FILEFLAGS       0x0L
+FILEOS          VOS_NT_WINDOWS32
+FILETYPE        VFT_APP
+FILESUBTYPE     VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"  // 英语(美国) + Unicode
+        BEGIN
+            VALUE "CompanyName",      "StockWidget"
+            VALUE "FileDescription",  "StockWidget 自选股悬浮窗"
+            VALUE "FileVersion",      "@PROJECT_VERSION@"
+            VALUE "InternalName",     "StockWidget"
+            VALUE "LegalCopyright",   "StockWidget"
+            VALUE "OriginalFilename", "StockWidget.exe"
+            VALUE "ProductName",      "StockWidget"
+            VALUE "ProductVersion",   "@PROJECT_VERSION@"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

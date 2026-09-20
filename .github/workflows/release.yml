@@ -52,6 +52,9 @@ jobs:
 
       - name: Build
         shell: cmd
+        env:
+          # tag 发布：把 tag 名作为版本号注入（workflow_dispatch 时为空 → 由 git tag 推导）
+          SW_VERSION_OVERRIDE: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
         run: scripts\build.cmd
 
       # 必须走 scripts\test.cmd：它把 %QT_DIR%\bin 加进 PATH。

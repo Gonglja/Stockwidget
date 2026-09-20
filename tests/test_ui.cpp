@@ -22,12 +22,14 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QSignalSpy>
 #include <QTableWidget>
 #include <QTextCodec>
 #include <QTreeWidget>
 #include <QTimer>
 #include "data/QuoteParser.h"
+#include "app/Version.h"
 #include "data/QuoteSort.h"
 #include "data/SinaQuoteSource.h"
 #include "ui/CustomConfigDialog.h"
@@ -185,6 +187,14 @@ class TestUi : public QObject {
     Q_OBJECT
 private slots:
     void initTestCase() { qRegisterMetaType<QVector<Quote>>("QVector<Quote>"); }
+
+    void versionMacroFollowsTag() {
+        // CMake 把 tag 注入 SW_VERSION；这里守的是「注入链路没断」+ 格式合法
+        const QString v = Version::text();
+        QVERIFY2(!v.isEmpty(), "SW_VERSION 未注入");
+        QVERIFY2(QRegularExpression(QStringLiteral("^[0-9]+\\.[0-9]+\\.[0-9]+$")).match(v).hasMatch(),
+                 qPrintable(QStringLiteral("SW_VERSION 格式非法: %1").arg(v)));
+    }
 
     void singleClickOnViewportHides() {
         ProbeWindow w(baseConfig());
