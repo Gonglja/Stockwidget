@@ -4,6 +4,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QKeySequenceEdit>
+#include <QLabel>
 #include <QSlider>
 #include <QTabWidget>
 #include <QTableView>
@@ -339,6 +340,34 @@ private slots:
         w.pushQuotes(twoQuotes());
         QTest::qWait(30);
         QCOMPARE(spy.count(), 1);
+    }
+
+    void infoLabelShowsNonTradingHintOutsideFetchWindow() {
+        ProbeWindow w(baseConfig());  // fetch_mode=custom 00:00–00:00 ⇒ 非请求时段
+        w.show();
+        QTest::qWait(150);
+
+        auto* info = w.findChild<QLabel*>("infoLabel");
+        QVERIFY(info);
+        QVERIFY2(info->isVisible(), "非请求时段且从无数据时应显示提示");
+        QCOMPARE(info->text(), QString("非交易时段"));
+
+        w.pushQuotes(twoQuotes());
+        QTest::qWait(30);
+        QVERIFY2(!info->isVisible(), "拿到数据后应撤掉提示，改为显示数据");
+    }
+
+    void infoLabelSilentInsideFetchWindow() {
+        QJsonObject cfg = baseConfig();
+        cfg["fetch_start"] = "00:00";
+        cfg["fetch_end"] = "23:59";  // custom 全时段 ⇒ 处于请求时段（本用例不发真实请求断言）
+        ProbeWindow w(cfg);
+        w.show();
+        QTest::qWait(100);
+
+        auto* info = w.findChild<QLabel*>("infoLabel");
+        QVERIFY(info);
+        QVERIFY2(!info->isVisible(), "请求时段内首次数据未到时不应误报「非交易时段」");
     }
 
     void contextMenuOnRowOffersAliasEdit() {
