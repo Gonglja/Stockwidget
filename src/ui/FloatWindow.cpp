@@ -183,6 +183,9 @@ void FloatWindow::applyConfig(const QJsonObject& raw) {
     m_shortCode = raw.value(QStringLiteral("short_code")).toBool(false);
     m_nameLength = raw.value(QStringLiteral("name_length")).toInt(0);
     const bool oldGearVisible = m_gearVisible;
+    const QString oldAppIcon = m_appIcon;
+    const QString oldHotkey = m_hotkey;
+    const bool oldStartOnBoot = m_startOnBoot;
     m_gearVisible = raw.value(QStringLiteral("gear_visible")).toBool(true);
     const QJsonObject oldNameMap = m_nameMap;
     const QString oldSortKey = m_sortKey;
@@ -265,6 +268,11 @@ void FloatWindow::applyConfig(const QJsonObject& raw) {
         updateGearRect();
         refitSize();
     }
+
+    // 图标/快捷键/开机启动的落地入口在 Application::saveConfig()，
+    // 这里必须立即 notifyChanged()，否则用户改完要等下一次任意事件才生效。
+    if (m_appIcon != oldAppIcon || m_hotkey != oldHotkey || m_startOnBoot != oldStartOnBoot)
+        notifyChanged();
 }
 
 void FloatWindow::applyStyle() {

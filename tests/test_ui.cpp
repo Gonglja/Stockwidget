@@ -370,6 +370,35 @@ private slots:
         QVERIFY2(!info->isVisible(), "请求时段内首次数据未到时不应误报「非交易时段」");
     }
 
+    void applicationLevelConfigChangesEmitImmediately() {
+        ProbeWindow w(baseConfig());
+        w.show();
+        QTest::qWait(150);
+        QSignalSpy spy(&w, &FloatWindow::configChanged);
+
+        QJsonObject c = w.currentConfig();
+        c["app_icon"] = "std:file";
+        w.applyConfig(c);
+        QTest::qWait(30);
+        QCOMPARE(spy.count(), 1);  // 改图标要立即通知 Application 落地
+
+        w.applyConfig(w.currentConfig());  // 同值：不应再 emit
+        QTest::qWait(30);
+        QCOMPARE(spy.count(), 1);
+
+        QJsonObject h = w.currentConfig();
+        h["hotkey"] = "Ctrl+Alt+G";
+        w.applyConfig(h);
+        QTest::qWait(30);
+        QCOMPARE(spy.count(), 2);
+
+        QJsonObject b = w.currentConfig();
+        b["start_on_boot"] = true;
+        w.applyConfig(b);
+        QTest::qWait(30);
+        QCOMPARE(spy.count(), 3);
+    }
+
     void contextMenuOnRowOffersAliasEdit() {
         ProbeWindow w(baseConfig());
         w.show();
