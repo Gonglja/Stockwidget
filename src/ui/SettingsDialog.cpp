@@ -1,4 +1,5 @@
 #include "ui/SettingsDialog.h"
+#include "app/Version.h"
 #include "data/QuoteColumns.h"
 #include "data/SinaQuoteSource.h"
 #include "data/StockCode.h"
@@ -41,7 +42,7 @@ const char* kTabTitles[] = {"自选列表", "显示数据", "外观", "常规"};
 }  // namespace
 
 SettingsDialog::SettingsDialog(FloatWindow* win, QWidget* parent) : QDialog(parent), m_win(win) {
-    setWindowTitle(QStringLiteral("设置"));
+    setWindowTitle(QStringLiteral("设置 ") + Version::label());
     setModal(false);
     auto* root = new QHBoxLayout(this);
     root->setContentsMargins(8, 8, 8, 8);

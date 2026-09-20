@@ -99,6 +99,23 @@ git push origin v1.5.0
 也可在 Actions 页**手动触发**（`workflow_dispatch`，只出 artifact、不建 Release）。
 CI 通过环境变量 `QT_DIR` 指定 Qt 路径；MSVC 环境由 `scripts\_vcvars.cmd` 经 `vswhere` 自动定位。
 
+### 版本号来源（不再手改）
+
+`CMakeLists.txt` 的版本号按以下优先级确定，并注入 `SW_VERSION` 宏（UI 用 `src/app/Version.h`）：
+
+1. 环境变量 `SW_VERSION_OVERRIDE`（CI 传 `${{ github.ref_name }}`，即 tag 名，会自动去掉 `v`）
+2. 当前 git tag（`git describe --tags --abbrev=0 --match "v[0-9]*"`，如 `v1.6.1` → `1.6.1`）
+3. 兜底 `0.0.0`
+
+影响面：`project(VERSION)`、**exe 文件属性（属性 → 详细信息 → 文件/产品版本）**、托盘提示与设置窗口标题。
+本地验证：
+
+```
+scripts\build.cmd                                    # 跟随 git tag
+set "SW_VERSION_OVERRIDE=v9.9.9" && scripts\build.cmd  # 临时指定
+powershell -c "(Get-Item build\StockWidget.exe).VersionInfo.FileVersion"
+```
+
 > **为什么 CI 用 6.8.3 而不是 6.11.1：** aqtinstall 目前无法安装 6.11.x —— 官方源 `qt6_6111` 分支的顶层 `Updates.xml` 缺失（404），而 6.10.3 / 6.8.3 正常。
 > 本项目 `find_package(Qt6 6.8)`，本机已用 **6.8.3 完整构建 + 7/7 测试通过**验证。本机脚本默认仍是 6.11.1（可用 `QT_DIR` 切换）。
 

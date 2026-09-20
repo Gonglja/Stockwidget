@@ -1,5 +1,6 @@
 #include "app/Application.h"
 #include "app/ConfigStore.h"
+#include "app/Version.h"
 #include "platform/AutoStart.h"
 #include "platform/GlobalHotkey.h"
 #include "ui/FloatWindow.h"
@@ -30,7 +31,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv) {
     applyIcon(m_iconChoice);
 
     m_tray = new QSystemTrayIcon(windowIcon(), this);
-    m_tray->setToolTip(QStringLiteral("StockWidget"));
+    m_tray->setToolTip(QStringLiteral("StockWidget ") + Version::label());
     auto* menu = new QMenu();
     menu->addAction(QStringLiteral("显示/隐藏 浮窗"), this, &Application::toggleWindow);
     menu->addAction(QStringLiteral("定位浮窗"), this, &Application::locateWindow);

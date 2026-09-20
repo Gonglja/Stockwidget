@@ -119,3 +119,21 @@
 | `ensureNamesFor` 过滤条件 | 计划只写了「非法/已有名」，实现补了 `aliasForCode()` 别名检查 | 测试 `settingsNamesSkipAliasedRows` 抓出：有自定义名称的代码仍会被请求 |
 | 测试替身 | 计划里 `StubNam` 返回固定 body → 改为**按 URL 的 `list=` 参数**生成响应 | 固定 body 会把没请求的代码也塞进缓存，导致 `settingsNameRequestedOnManualAdd` 假失败（真实新浪只返回请求的代码） |
 | 测试辅助函数 | 用脚本批量替换时误删了 `columnOf`/`cellText`，已恢复 | 替换区间从注释行切到 `baseConfig()`，跨过了这两个函数 |
+
+---
+
+## 2026-09-20 追加需求 3：版本号跟随 tag
+
+- [x] **背景** — `project(StockWidget VERSION 1.0.0)` 从没跟 tag 涨过；且 exe 没有 VERSIONINFO，文件属性里看不到任何版本
+- [x] **方案** — 环境变量 `SW_VERSION_OVERRIDE`（CI 传 tag）> git tag > `0.0.0`；注入 `SW_VERSION` 宏；生成 `StockWidget.rc` 写 VERSIONINFO；托盘提示与设置窗口标题显示 `vX.Y.Z`
+- [x] **验证** — ①无注入 → `1.6.1`（取 git tag）；②`SW_VERSION_OVERRIDE=v9.9.9` → `9.9.9`（去掉 `v`）；③再去掉注入 → 回到 `1.6.1`（**无 CMake 缓存污染**，故用环境变量而非 `-D`）；④exe `VersionInfo.FileVersion=1.6.1`，中文描述以 UTF-16 正确写入（码位校验通过）；⑤全量 `ctest` 9/9（含新增 `versionMacroFollowsTag`）
+
+**提交**：（见 git log）
+
+**执行记录（偏差）**
+
+| 处 | 偏差 | 原因 |
+|---|---|---|
+| 版本注入方式 | 计划用 `-DSW_VERSION_OVERRIDE`，实现改为**环境变量** | `-D` 会写进 `CMakeCache.txt`，后续不传也继续生效（本地验证时踩到） |
+| `StockWidget.rc` | 需要 `#include <winres.h>` + `#pragma code_page(65001)` | 否则 `VS_FFI_FILEFLAGSMASK` 未定义 / 中文值报 RC2133 |
+| CMake | 额外 `string(STRIP)` | cmd 的 `set VAR=x && ...` 会把尾随空格带进值，导致正则校验失败回落 0.0.0 |
