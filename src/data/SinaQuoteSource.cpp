@@ -4,11 +4,19 @@
 #include <QNetworkRequest>
 #include <QTextCodec>
 
-SinaQuoteSource::SinaQuoteSource(QObject* parent) : QObject(parent) {}
+SinaQuoteSource::SinaQuoteSource(QObject* parent) : QObject(parent) {
+    m_ownedNam = new QNetworkAccessManager(this);
+    m_nam = m_ownedNam;
+}
+
+void SinaQuoteSource::setNetworkAccessManager(QNetworkAccessManager* nam) {
+    m_nam = nam ? nam : m_ownedNam;
+}
 
 void SinaQuoteSource::setFormatOptions(const QuoteFormatOptions& opt) { m_opt = opt; }
 
 void SinaQuoteSource::fetch(const QStringList& codes) {
+    if (!m_nam) return;
     if (codes.isEmpty()) {
         emit error(QStringLiteral("暂无数据，请添加自选"));
         return;
@@ -23,7 +31,7 @@ void SinaQuoteSource::fetch(const QStringList& codes) {
     req.setRawHeader("User-Agent", "Mozilla/5.0");
     req.setTransferTimeout(3000);
 
-    QNetworkReply* reply = m_nam.get(req);
+    QNetworkReply* reply = m_nam->get(req);
     m_reply = reply;
     // 必须捕获 reply 本身，不能读共享成员 m_reply：
     // 否则并发/重叠时会把别的 reply 置空并 deleteLater(nullptr) -> 崩溃。
