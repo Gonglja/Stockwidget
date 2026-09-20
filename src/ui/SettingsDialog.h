@@ -33,6 +33,9 @@ public:
     // 名称请求源（生产：内部自建；测试：替换其 NAM 以避免联网）
     SinaQuoteSource* nameSource() const { return m_names; }
 
+    // 添加（或勾选已存在的）代码；knownName 非空时直接用作名称并跳过请求
+    bool addCode(const QString& codeIn, const QString& knownName = QString());
+
 protected:
     void showEvent(QShowEvent* event) override;
 

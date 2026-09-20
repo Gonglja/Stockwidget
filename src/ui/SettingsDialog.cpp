@@ -145,30 +145,7 @@ QWidget* SettingsDialog::buildCodesTab() {
     }
 
     auto commit = [this] { commitCodes(); };
-    auto addCode = [this, commit](const QString& codeIn) -> bool {
-        const auto n = StockCode::normalize(codeIn);
-        if (!n) return false;
-        for (int i = 0; i < m_codeList->topLevelItemCount(); ++i) {
-            if (m_codeList->topLevelItem(i)->data(0, Qt::UserRole).toString() == *n) {
-                m_codeList->topLevelItem(i)->setCheckState(0, Qt::Checked);
-                m_codeList->setCurrentItem(m_codeList->topLevelItem(i));
-                commit();
-                ensureNamesFor({*n});
-                return true;
-            }
-        }
-        auto* it = new QTreeWidgetItem(m_codeList);
-        it->setFlags((it->flags() | Qt::ItemIsUserCheckable) & ~Qt::ItemIsEditable);
-        it->setData(0, Qt::UserRole, *n);
-        it->setText(0, *n);
-        it->setCheckState(0, Qt::Checked);
-        m_codeList->setCurrentItem(it);
-        refreshItemName(it);
-        commit();
-        ensureNamesFor({*n});
-        return true;
-    };
-    auto submitSearch = [this, addCode] {
+    auto submitSearch = [this] {
         const QString text = m_searchEdit->text();
         bool ok = false;
         if (StockCode::normalize(text)) {
@@ -176,7 +153,9 @@ QWidget* SettingsDialog::buildCodesTab() {
         } else {
             const QListWidgetItem* sel = m_suggestList->currentItem();
             if (!sel && m_suggestList->count() > 0) sel = m_suggestList->item(0);
-            if (sel) ok = addCode(sel->data(Qt::UserRole).toString());
+            if (sel)
+                ok = addCode(sel->data(Qt::UserRole).toString(),
+                             sel->data(Qt::UserRole + 1).toString());  // 复用联想名称
         }
         if (ok) {
             m_searchEdit->clear();
@@ -207,6 +186,7 @@ QWidget* SettingsDialog::buildCodesTab() {
                     auto* it = new QListWidgetItem(
                         QStringLiteral("%1  %2").arg(s.name, s.code), m_suggestList);
                     it->setData(Qt::UserRole, s.code);
+                    it->setData(Qt::UserRole + 1, s.name);  // 联想自带名称，选中时零请求
                 }
                 m_suggestList->setVisible(!items.isEmpty());
                 if (items.size() > 0) m_suggestList->setCurrentRow(0);
@@ -217,15 +197,14 @@ QWidget* SettingsDialog::buildCodesTab() {
     });
     connect(m_searchEdit, &QLineEdit::returnPressed, this, [submitSearch] { submitSearch(); });
     connect(btnAddSearch, &QPushButton::clicked, this, [submitSearch] { submitSearch(); });
-    connect(m_suggestList, &QListWidget::itemActivated, this,
-            [this, addCode](QListWidgetItem* it) {
-                if (!it) return;
-                if (addCode(it->data(Qt::UserRole).toString())) {
-                    m_searchEdit->clear();
-                    m_suggestList->clear();
-                    m_suggestList->setVisible(false);
-                }
-            });
+    connect(m_suggestList, &QListWidget::itemActivated, this, [this](QListWidgetItem* it) {
+        if (!it) return;
+        if (addCode(it->data(Qt::UserRole).toString(), it->data(Qt::UserRole + 1).toString())) {
+            m_searchEdit->clear();
+            m_suggestList->clear();
+            m_suggestList->setVisible(false);
+        }
+    });
 
     auto* btnCol = new QVBoxLayout();
     auto addBtn = [&](const QString& text, std::function<void()> fn) {
@@ -362,6 +341,37 @@ void SettingsDialog::commitCodes() {
     c[QStringLiteral("checked_codes")] = QJsonArray::fromStringList(checkedList);
     c[QStringLiteral("name_map")] = nameMap;
     m_win->applyConfig(c);
+}
+
+bool SettingsDialog::addCode(const QString& codeIn, const QString& knownName) {
+    if (!m_codeList) return false;
+    const auto n = StockCode::normalize(codeIn);
+    if (!n) return false;
+
+    const QString known = knownName.trimmed();
+    if (!known.isEmpty()) m_nameCache.insert(*n, known);  // 联想结果 → 零请求
+
+    QTreeWidgetItem* found = nullptr;
+    for (int i = 0; i < m_codeList->topLevelItemCount(); ++i) {
+        if (m_codeList->topLevelItem(i)->data(0, Qt::UserRole).toString() == *n) {
+            found = m_codeList->topLevelItem(i);
+            break;
+        }
+    }
+    if (found) {
+        found->setCheckState(0, Qt::Checked);
+    } else {
+        found = new QTreeWidgetItem(m_codeList);
+        found->setFlags((found->flags() | Qt::ItemIsUserCheckable) & ~Qt::ItemIsEditable);
+        found->setData(0, Qt::UserRole, *n);
+        found->setText(0, *n);
+        found->setCheckState(0, Qt::Checked);
+    }
+    m_codeList->setCurrentItem(found);
+    refreshItemName(found);
+    commitCodes();
+    ensureNamesFor({*n});
+    return true;
 }
 
 bool SettingsDialog::applyCodeEdit(const QString& code, const QString& alias, QTreeWidgetItem* item) {

@@ -726,6 +726,33 @@ private slots:
         dlg.close();
     }
 
+    void settingsNameFromSuggestionNeedsNoRequest() {
+        ProbeWindow w(baseConfig());
+        w.show();
+        QTest::qWait(100);
+
+        StubNam nam;
+        SettingsDialog dlg(&w, &w);
+        dlg.nameSource()->setNetworkAccessManager(&nam);
+        dlg.show();
+        QTest::qWait(200);
+        const int before = nam.urls.size();
+
+        QVERIFY(dlg.addCode("sh601318", "中国平安"));  // 联想结果自带名称
+        QTest::qWait(50);
+        QCOMPARE(nam.urls.size(), before);  // 不产生任何请求
+
+        auto* tree = dlg.findChild<QTreeWidget*>("codeList");
+        QVERIFY(tree);
+        QString name;
+        for (int i = 0; i < tree->topLevelItemCount(); ++i)
+            if (tree->topLevelItem(i)->data(0, Qt::UserRole).toString() == "sh601318")
+                name = tree->topLevelItem(i)->text(1);
+        QCOMPARE(name, QString("中国平安"));
+        QCOMPARE(w.currentConfig().value("codes").toArray().size(), 2);
+        dlg.close();
+    }
+
     void doubleClickListItemEditsAlias() {
         ProbeWindow w(baseConfig());
         w.show();
