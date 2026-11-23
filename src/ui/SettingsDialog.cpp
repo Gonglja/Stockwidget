@@ -104,7 +104,8 @@ QWidget* SettingsDialog::buildCodesTab() {
     auto* searchRow = new QHBoxLayout();
     m_searchEdit = new QLineEdit(group);
     m_searchEdit->setObjectName(QStringLiteral("searchEdit"));
-    m_searchEdit->setPlaceholderText(QStringLiteral("输入代码（可不带前缀）或名称模糊搜索…"));
+    m_searchEdit->setPlaceholderText(
+        QStringLiteral("输入 A 股/港股代码（可不带前缀）或名称模糊搜索…"));
     auto* btnAddSearch = new QPushButton(QStringLiteral("添加"), group);
     btnAddSearch->setFixedWidth(60);
     searchRow->addWidget(m_searchEdit, 1);
@@ -260,9 +261,11 @@ void SettingsDialog::refreshNameColumn() {
 QString SettingsDialog::nameFor(const QString& code) const {
     const auto n = StockCode::normalize(code);
     if (!n) return QString();
-    const QString cached = m_nameCache.value(*n);
-    if (!cached.isEmpty()) return cached;
-    return m_win ? m_win->quoteNameFor(*n) : QString();  // 浮窗兜底
+    const QString fetched = m_nameCache.value(*n);
+    if (!fetched.isEmpty()) return fetched;
+    const QString live = m_win ? m_win->quoteNameFor(*n) : QString();  // 浮窗实时行情
+    if (!live.isEmpty()) return live;
+    return m_win ? m_win->cachedNameFor(*n) : QString();  // 本地持久缓存
 }
 
 void SettingsDialog::refreshItemName(QTreeWidgetItem* it) {
@@ -313,7 +316,13 @@ void SettingsDialog::pumpNameQueue() {
 
 void SettingsDialog::applyNames(const QVector<Quote>& quotes) {
     m_nameFetching = false;
-    for (const Quote& q : quotes) m_nameCache.insert(q.code, q.name);
+    QHash<QString, QString> names;
+    for (const Quote& q : quotes) {
+        const QString name = q.fullName.isEmpty() ? q.name : q.fullName;
+        m_nameCache.insert(q.code, name);
+        names.insert(q.code, name);
+    }
+    if (m_win) m_win->cacheNames(names);  // 持久化：取消勾选/离线时仍能显示
     refreshNameColumn();
     pumpNameQueue();
 }
@@ -350,7 +359,10 @@ bool SettingsDialog::addCode(const QString& codeIn, const QString& knownName) {
     if (!n) return false;
 
     const QString known = knownName.trimmed();
-    if (!known.isEmpty()) m_nameCache.insert(*n, known);  // 联想结果 → 零请求
+    if (!known.isEmpty()) {
+        m_nameCache.insert(*n, known);  // 联想结果 → 零请求
+        if (m_win) m_win->cacheName(*n, known);
+    }
 
     QTreeWidgetItem* found = nullptr;
     for (int i = 0; i < m_codeList->topLevelItemCount(); ++i) {
@@ -426,7 +438,8 @@ void SettingsDialog::editCodeItem(QTreeWidgetItem* item) {
     connect(buttons, &QDialogButtonBox::accepted, &dlg, [&dlg, codeEdit] {
         if (!StockCode::normalize(codeEdit->text())) {
             QMessageBox::warning(&dlg, QStringLiteral("代码无效"),
-                                 QStringLiteral("请输入 6 位代码或带前缀代码（如 sh600000）"));
+                                 QStringLiteral("请输入 6 位 A 股代码、5 位港股代码或带前缀代码"
+                                                "（如 sh600000 / hk00700）"));
             return;
         }
         dlg.accept();

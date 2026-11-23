@@ -71,6 +71,24 @@ private slots:
         raw["name_map"] = QJsonArray{"sh600000"};
         QVERIFY(!ConfigStore::normalize(raw).contains("name_map"));
     }
+    void normalizesNameCacheKeys() {
+        QJsonObject raw;
+        raw["name_cache"] = QJsonObject{{"600000", "浦发银行"},
+                                         {"700", "腾讯控股"},
+                                         {"hk00700", "腾讯控股"},
+                                         {"sz000001", "  "},
+                                         {"bad", "x"}};
+        const QJsonObject out = ConfigStore::normalize(raw);
+        const QJsonObject cache = out.value("name_cache").toObject();
+        QCOMPARE(cache.size(), 2);
+        QCOMPARE(cache.value("sh600000").toString(), QString("浦发银行"));
+        QCOMPARE(cache.value("hk00700").toString(), QString("腾讯控股"));
+    }
+    void dropsNonObjectNameCache() {
+        QJsonObject raw;
+        raw["name_cache"] = QJsonArray{"sh600000"};
+        QVERIFY(!ConfigStore::normalize(raw).contains("name_cache"));
+    }
     void resetsUnknownSortKeyButKeepsOrderFlag() {
         QJsonObject raw;
         raw["sort_key"] = "kline_visible";

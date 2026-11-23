@@ -4,6 +4,17 @@
 #include <QNetworkRequest>
 #include <QTextCodec>
 
+namespace {
+// 港股实时行情需带 rt_ 前缀；A 股不带。
+QStringList requestCodes(const QStringList& codes) {
+    QStringList out;
+    out.reserve(codes.size());
+    for (const QString& c : codes)
+        out << (c.startsWith(QStringLiteral("hk")) ? QStringLiteral("rt_") + c : c);
+    return out;
+}
+}  // namespace
+
 SinaQuoteSource::SinaQuoteSource(QObject* parent) : QObject(parent) {
     m_ownedNam = new QNetworkAccessManager(this);
     m_nam = m_ownedNam;
@@ -26,7 +37,7 @@ void SinaQuoteSource::fetch(const QStringList& codes) {
     if (m_reply) return;
 
     QNetworkRequest req{QUrl(QStringLiteral("https://hq.sinajs.cn/list=") +
-                            codes.join(QLatin1Char(',')))};
+                            requestCodes(codes).join(QLatin1Char(',')))};
     req.setRawHeader("Referer", "https://finance.sina.com.cn");
     req.setRawHeader("User-Agent", "Mozilla/5.0");
     req.setTransferTimeout(3000);

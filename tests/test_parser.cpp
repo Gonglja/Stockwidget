@@ -8,6 +8,11 @@ static const char* kPufa =
     "600,10.210,700,10.220,800,10.230,900,10.240,1000,10.250,"
     "2026-09-11,15:00:00,00\";\n";
 
+static const char* kTencent =
+    "var hq_str_rt_hk00700=\"TENCENT,腾讯控股,335.000,344.000,341.400,333.000,338.000,"
+    "-6.000,-1.744,338.00000,338.20001,6343939839,18883190,0.000,0.000,631.641,333.000,"
+    "2026/11/23,11:59:57,30|3,N|Y|Y,0.000|0.000|0.000,0|||0.000|0.000|0.000, |0,Y\";\n";
+
 class TestParser : public QObject {
     Q_OBJECT
 private slots:
@@ -32,6 +37,42 @@ private slots:
         QCOMPARE(s.volumeText, QString("8000"));
         QCOMPARE(s.amountText, QString("8.16万"));
         QCOMPARE(s.avgText, QString("10.20"));
+    }
+    void parsesHongKongQuote() {
+        QuoteFormatOptions opt;
+        opt.nameLength = 0;
+        const auto q = QuoteParser::parseText(QString::fromUtf8(kTencent), opt);
+        QCOMPARE(q.size(), 1);
+        const Quote& s = q.first();
+        QCOMPARE(s.code, QString("hk00700"));
+        QCOMPARE(s.name, QString("腾讯控股"));
+        QCOMPARE(s.fullName, QString("腾讯控股"));
+        QCOMPARE(s.open, 335.0);
+        QCOMPARE(s.prevClose, 344.0);
+        QCOMPARE(s.price, 338.0);
+        QCOMPARE(s.high, 341.4);
+        QCOMPARE(s.low, 333.0);
+        QCOMPARE(s.buy1, 338.0);
+        QCOMPARE(s.sell1, 338.20001);
+        QCOMPARE(s.volume, 18883190.0);
+        QCOMPARE(s.amount, 6343939839.0);
+        QCOMPARE(s.priceText, QString("338.000 "));
+        QCOMPARE(s.changeText, QString("-6.000"));
+        QCOMPARE(s.changePctText, QString("-1.74%"));
+        QCOMPARE(s.volumeText, QString("1888.32万"));
+        QCOMPARE(s.amountText, QString("63.44亿"));
+        QCOMPARE(s.avgText, QString("335.957"));
+        QCOMPARE(s.b1Text, QString("338.000<"));
+        QCOMPARE(s.s1Text, QString(">338.200"));
+    }
+    void hongKongShortCodeAndTruncation() {
+        QuoteFormatOptions opt;
+        opt.shortCode = true;
+        opt.nameLength = 2;
+        const auto q = QuoteParser::parseText(QString::fromUtf8(kTencent), opt);
+        QCOMPARE(q.first().code, QString("00700"));
+        QCOMPARE(q.first().name, QString("腾讯"));
+        QCOMPARE(q.first().fullName, QString("腾讯控股"));
     }
     void shortCodeAndFullName() {
         QuoteFormatOptions opt;

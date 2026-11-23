@@ -12,11 +12,27 @@ private slots:
             "sh600036,11,600036,sh600036,招商银行,,招商银行,99,1,ESG,,;"
             "06000,31,06000,06000,IFC DEV N2904,,IFC DEV N2904,99,1,,,\";");
         const auto items = SuggestParser::parseSuggest(text);
-        QCOMPARE(items.size(), 2);  // 06000 非沪深京 6 位，被过滤
+        QCOMPARE(items.size(), 3);  // 类型 31 的 5 位代码按港股保留
         QCOMPARE(items.at(0).code, QString("sh600030"));
         QCOMPARE(items.at(0).name, QString("中信证券"));
         QCOMPARE(items.at(1).code, QString("sh600036"));
         QCOMPARE(items.at(1).name, QString("招商银行"));
+        QCOMPARE(items.at(2).code, QString("hk06000"));
+        QCOMPARE(items.at(2).name, QString("IFC DEV N2904"));
+    }
+    void keepsHongKong() {
+        const QString text = QStringLiteral(
+            "var suggestvalue=\"腾讯控股,31,00700,00700,腾讯控股,,腾讯控股,99,1,ESG,,;"
+            "腾讯汇丰五七沽A,32,22099,22099,腾讯汇丰五七沽A,,腾讯汇丰五七沽A,99,1,,,;\"");
+        const auto items = SuggestParser::parseSuggest(text);
+        QCOMPARE(items.size(), 1);  // 窝轮（类型 32）被过滤
+        QCOMPARE(items.at(0).code, QString("hk00700"));
+        QCOMPARE(items.at(0).name, QString("腾讯控股"));
+    }
+    void dropsFiveDigitNonStockType() {
+        const QString text = QStringLiteral(
+            "var suggestvalue=\"某某窝轮,32,22099,22099,某某窝轮,,某某窝轮,99,1,,,;\"");
+        QVERIFY(SuggestParser::parseSuggest(text).isEmpty());
     }
     void keepsShenzhenAndBeijing() {
         const QString text = QStringLiteral(

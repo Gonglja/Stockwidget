@@ -2,6 +2,7 @@
 #include "data/Quote.h"
 #include <QColor>
 #include <QFont>
+#include <QHash>
 #include <QJsonObject>
 #include <QStringList>
 #include <QWidget>
@@ -31,6 +32,11 @@ public:
 
     // 该代码当前的行情名称（原始名，不含用户别名）；无数据或未命中返回空串。
     QString quoteNameFor(const QString& code) const;
+    // 本地持久化的行情名称缓存（不联网，未命中返回空串）。
+    QString cachedNameFor(const QString& code) const;
+    // 批量写入名称缓存；有变化时持久化。
+    void cacheNames(const QHash<QString, QString>& names);
+    void cacheName(const QString& code, const QString& name);
 
 signals:
     void configChanged();
@@ -86,6 +92,7 @@ private:
     bool m_shortCode = false;
     int m_nameLength = 0;
     QJsonObject m_nameMap;
+    QJsonObject m_nameCache;  // code -> 行情全称（本地持久化，供未勾选/离线时显示）
     QString m_sortKey;
     bool m_sortAsc = false;
     QVector<Quote> m_rawQuotes;
@@ -139,7 +146,6 @@ private:
     QPoint m_pressGlobalPos;
     QPoint m_dragOffset;
     std::function<void()> m_openSettings;
-    bool m_columnWidthsFrozen = false;
     bool m_pressOnHeader = false;
     int m_headerPressColumn = -1;
     QRect m_gearRect;

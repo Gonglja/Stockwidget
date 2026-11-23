@@ -99,6 +99,25 @@ QJsonObject ConfigStore::normalize(const QJsonObject& raw) {
         }
     }
 
+    // name_cache：行情名称本地缓存（code -> 全称）；非 object 丢弃；键归一化；空值剔除
+    if (out.contains(QStringLiteral("name_cache"))) {
+        const QJsonValue value = out.value(QStringLiteral("name_cache"));
+        if (!value.isObject()) {
+            out.remove(QStringLiteral("name_cache"));
+        } else {
+            const QJsonObject src = value.toObject();
+            QJsonObject cleaned;
+            for (auto it = src.begin(); it != src.end(); ++it) {
+                const QString name = it.value().toString().trimmed();
+                if (name.isEmpty()) continue;
+                const auto code = StockCode::normalize(it.key());
+                if (!code) continue;
+                cleaned.insert(*code, name);
+            }
+            out.insert(QStringLiteral("name_cache"), cleaned);
+        }
+    }
+
     // sort_key：白名单兜底；sort_asc 归一化为 bool
     const QString sortKey = out.value(QStringLiteral("sort_key")).toString();
     if (!sortKey.isEmpty() && !QuoteSort::isValidKey(sortKey))

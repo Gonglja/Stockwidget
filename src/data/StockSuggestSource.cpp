@@ -13,15 +13,19 @@ QVector<StockSuggestion> SuggestParser::parseSuggest(const QString& text) {
     const int lastQuote = payload.lastIndexOf(QLatin1Char('"'));
     if (lastQuote >= 0) payload = payload.left(lastQuote);
 
-    static const QRegularExpression kFullCode(QStringLiteral("^(sh|sz|bj)\\d{6}$"));
+    static const QRegularExpression kFullCode(QStringLiteral("^(sh|sz|bj)\\d{6}$|^hk\\d{5}$"));
+    static const QRegularExpression kFiveDigits(QStringLiteral("^\\d{5}$"));
     const QStringList entries = payload.split(QLatin1Char(';'));
     for (const QString& entry : entries) {
         const QStringList parts = entry.split(QLatin1Char(','));
         if (parts.size() < 5) continue;
-        // 实际格式：[0]带前缀代码 [1]类型 [2]代码 [3]带前缀代码 [4]名称 ...
+        // 实际格式：[0]名称 [1]类型 [2]代码 [3]带前缀代码 [4]名称 ...
         QString name = parts.at(4).trimmed();
         if (name.isEmpty() && parts.size() > 6) name = parts.at(6).trimmed();
-        const QString full = parts.at(3).trimmed().toLower();
+        QString full = parts.at(3).trimmed().toLower();
+        // 港股（类型 31）在新浪联想里没有前缀，需要补 hk；窝轮等（32）不收录。
+        if (parts.at(1).trimmed() == QStringLiteral("31") && kFiveDigits.match(full).hasMatch())
+            full = QStringLiteral("hk") + full;
         if (name.isEmpty() || !kFullCode.match(full).hasMatch()) continue;
         out.append({full, name});
     }
@@ -43,7 +47,7 @@ void StockSuggestSource::query(const QString& keyword) {
     // 用 QUrl::fromEncoded 构造，避免 QUrl 对 '%' 二次编码。
     const QByteArray encoded =
         QByteArray("https://suggest3.sinajs.cn/suggest/"
-                   "type=11,12,13,14,15,21,22,23,24,25,26&key=") +
+                   "type=11,12,13,14,15,21,22,23,24,25,26,31&key=") +
         key.toUtf8().toPercentEncoding();
     QNetworkRequest req{QUrl::fromEncoded(encoded)};
     req.setRawHeader("Referer", "https://finance.sina.com.cn");

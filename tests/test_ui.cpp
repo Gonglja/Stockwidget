@@ -65,6 +65,13 @@ static QVector<Quote> twoQuotes() {
     return QuoteParser::parseText(QString::fromUtf8(kTwoLines), QuoteFormatOptions{});
 }
 
+// 只保留 sh600000 一行（模拟勾选变化后下一次刷新只返回勾选代码）
+static QVector<Quote> firstQuoteOnly() {
+    const QString text = QString::fromUtf8(kTwoLines).section(QLatin1Char('\n'), 0, 0) +
+                         QLatin1Char('\n');
+    return QuoteParser::parseText(text, QuoteFormatOptions{});
+}
+
 // ---- 测试替身：不联网的行情源（体内容用 GBK 编码，模拟新浪）----
 static QString quoteLine(const QString& code, const QString& name);
 static QByteArray nameBodyFor(const QStringList& codes);
@@ -734,6 +741,86 @@ private slots:
         QCOMPARE(nam.urls.size(), 2);  // 第一次返回后立刻补发
         QVERIFY(nam.urls.last().contains("sh600519"));
         dlg.close();
+    }
+
+    void addsHongKongCode() {
+        ProbeWindow w(baseConfig());
+        w.show();
+        QTest::qWait(150);
+
+        StubNam nam;
+        SettingsDialog dlg(&w, &w);
+        dlg.nameSource()->setNetworkAccessManager(&nam);
+        dlg.show();
+        QTest::qWait(200);
+
+        QVERIFY(dlg.addCode("00700", "腾讯控股"));  // 5 位港股代码（以 0 开头）
+        QTest::qWait(30);
+        auto* tree = dlg.findChild<QTreeWidget*>("codeList");
+        QVERIFY(tree);
+        QTreeWidgetItem* hk = nullptr;
+        for (int i = 0; i < tree->topLevelItemCount(); ++i)
+            if (tree->topLevelItem(i)->text(0) == QString("hk00700")) hk = tree->topLevelItem(i);
+        QVERIFY(hk);
+        QCOMPARE(hk->checkState(0), Qt::Checked);
+        QCOMPARE(hk->text(1), QString("腾讯控股"));
+        QCOMPARE(w.currentConfig().value("codes").toArray().last().toString(), QString("hk00700"));
+        QCOMPARE(w.currentConfig().value("name_cache").toObject().value("hk00700").toString(),
+                 QString("腾讯控股"));
+        dlg.close();
+    }
+
+    void settingsNameColumnSurvivesUncheckUsingCache() {
+        QJsonObject cfg = baseConfig();
+        cfg["codes"] = QJsonArray{"sh600030", "sz000001"};
+        cfg["checked_codes"] = cfg["codes"];
+        ProbeWindow w(cfg);
+        w.show();
+        QTest::qWait(150);
+
+        w.pushQuotes(twoQuotes());  // 行情先到 → 名称落入本地缓存
+        QTest::qWait(30);
+        QCOMPARE(w.currentConfig().value("name_cache").toObject().value("sz000001").toString(),
+                 QString("平安银行"));
+
+        StubNam nam;
+        SettingsDialog dlg(&w, &w);
+        dlg.nameSource()->setNetworkAccessManager(&nam);
+        dlg.show();
+        QTest::qWait(150);
+        auto* tree = dlg.findChild<QTreeWidget*>("codeList");
+        QVERIFY(tree);
+        QCOMPARE(tree->topLevelItem(1)->text(1), QString("平安银行"));
+
+        // 取消勾选后下一次刷新不再返回该代码：名称必须从缓存回填
+        tree->topLevelItem(1)->setCheckState(0, Qt::Unchecked);
+        QTest::qWait(30);
+        w.pushQuotes(firstQuoteOnly());
+        QTest::qWait(30);
+        QCOMPARE(tree->topLevelItem(1)->text(1), QString("平安银行"));
+        dlg.close();
+
+        // 重开设置：命中本地缓存，不应该再联网查名称
+        StubNam nam2;
+        SettingsDialog dlg2(&w, &w);
+        dlg2.nameSource()->setNetworkAccessManager(&nam2);
+        dlg2.show();
+        QTest::qWait(150);
+        QVERIFY2(nam2.urls.isEmpty(), "名称命中本地缓存时不应发起查询");
+        auto* tree2 = dlg2.findChild<QTreeWidget*>("codeList");
+        QVERIFY(tree2);
+        QCOMPARE(tree2->topLevelItem(1)->text(1), QString("平安银行"));
+        dlg2.close();
+    }
+
+    void sinaSourceRequestsHongKongWithRtPrefix() {
+        StubNam nam;
+        SinaQuoteSource src;
+        src.setNetworkAccessManager(&nam);
+        src.fetch({"hk00700", "sh600000"});
+        QTest::qWait(50);
+        QCOMPARE(nam.urls.size(), 1);
+        QVERIFY(nam.urls.first().contains(QStringLiteral("list=rt_hk00700,sh600000")));
     }
 
     void settingsNameFromSuggestionNeedsNoRequest() {

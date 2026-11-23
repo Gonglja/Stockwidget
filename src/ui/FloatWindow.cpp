@@ -89,7 +89,7 @@ FloatWindow::FloatWindow(const QJsonObject& cfg, QWidget* parent) : QWidget(pare
     m_table->verticalHeader()->setMinimumSectionSize(1);
     m_table->verticalHeader()->setDefaultSectionSize(1);
     m_table->horizontalHeader()->setStretchLastSection(false);
-    m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Fixed);
     m_table->horizontalHeader()->setSectionsClickable(true);
     m_table->horizontalHeader()->setSortIndicatorShown(false);
     m_vbox->addWidget(m_table);
@@ -191,6 +191,7 @@ void FloatWindow::applyConfig(const QJsonObject& raw) {
     const QString oldSortKey = m_sortKey;
     const bool oldSortAsc = m_sortAsc;
     m_nameMap = raw.value(QStringLiteral("name_map")).toObject();
+    m_nameCache = raw.value(QStringLiteral("name_cache")).toObject();
     m_sortKey = raw.value(QStringLiteral("sort_key")).toString();
     m_sortAsc = raw.value(QStringLiteral("sort_asc")).toBool(false);
     m_b1s1 = b1s1FromString(raw.value(QStringLiteral("b1s1_display"))
@@ -326,7 +327,6 @@ void FloatWindow::rebuildColumns() {
     m_model->setColumns(QuoteColumns::activeColumns(m_columnCfg));
     const int kcol = m_model->klineColumn();
     if (kcol >= 0) m_table->setItemDelegateForColumn(kcol, m_klineDelegate);
-    m_columnWidthsFrozen = false;
     refitSize();
 }
 
@@ -334,6 +334,12 @@ void FloatWindow::onQuotesReady(const QVector<Quote>& quotes) {
     m_errorLabel->setVisible(false);
     setInfoText(QString());
     m_rawQuotes = quotes;
+    QHash<QString, QString> names;
+    for (const Quote& q : quotes) {
+        const QString name = q.fullName.isEmpty() ? q.name : q.fullName;
+        if (!name.isEmpty()) names.insert(q.code, name);
+    }
+    cacheNames(names);
     redisplayLastQuotes();
     emit quotesUpdated();
 }
@@ -343,9 +349,7 @@ void FloatWindow::redisplayLastQuotes() {
     QVector<Quote> quotes = m_rawQuotes;
     NameAlias::applyAliases(quotes, m_nameMap);
     QuoteSort::sortQuotes(quotes, m_sortKey, m_sortAsc);
-    const int before = m_model->rowCount();
     m_model->setQuotes(quotes);
-    if (m_model->rowCount() != before) m_columnWidthsFrozen = false;
     refitSize();
 }
 
@@ -408,6 +412,30 @@ QString FloatWindow::quoteNameFor(const QString& code) const {
     return QString();
 }
 
+QString FloatWindow::cachedNameFor(const QString& code) const {
+    const auto n = StockCode::normalize(code);
+    if (!n) return QString();
+    return m_nameCache.value(*n).toString();
+}
+
+void FloatWindow::cacheName(const QString& code, const QString& name) {
+    cacheNames(QHash<QString, QString>{{code, name}});
+}
+
+void FloatWindow::cacheNames(const QHash<QString, QString>& names) {
+    bool changed = false;
+    for (auto it = names.begin(); it != names.end(); ++it) {
+        const QString name = it.value().trimmed();
+        if (name.isEmpty()) continue;
+        const auto code = StockCode::normalize(it.key());
+        if (!code) continue;
+        if (m_nameCache.value(*code).toString() == name) continue;
+        m_nameCache.insert(*code, name);
+        changed = true;
+    }
+    if (changed) notifyChanged();
+}
+
 void FloatWindow::setInfoText(const QString& text) {
     if (!m_infoLabel) return;
     const bool wasVisible = m_infoLabel->isVisible();
@@ -452,12 +480,29 @@ void FloatWindow::evaluateSchedule() {
 }
 
 void FloatWindow::refitSize() {
-    if (!m_columnWidthsFrozen) {
-        m_table->resizeColumnsToContents();
-        m_columnWidthsFrozen = true;
-    }
     const int cols = m_model->columnCount();
     const int rows = m_model->rowCount();
+    // 按实际文本宽度定列宽（Qt 的 resizeColumnsToContents/ResizeToContents 会把
+    // 隐藏表头的内边距、排序箭头空间也算进去，导致列间空白过大）。
+    const QFontMetrics fm = m_table->fontMetrics();
+    const QHeaderView* header = m_table->horizontalHeader();
+    const bool headerVisible = header->isVisible();
+    const int klineCol = m_model->klineColumn();
+    for (int c = 0; c < cols; ++c) {
+        int content = 0;
+        if (headerVisible)
+            content = fm.horizontalAdvance(m_model->headerData(c, Qt::Horizontal).toString());
+        for (int r = 0; r < rows; ++r) {
+            const QString text = m_model->data(m_model->index(r, c), Qt::DisplayRole).toString();
+            content = qMax(content, fm.horizontalAdvance(text));
+        }
+        if (c == klineCol) content = qMax(content, 24);  // K 线绘制所需最小宽度
+        int w = content + 8;                             // 左右各 4px 内边距
+        if (headerVisible && header->sortIndicatorSection() == c &&
+            header->isSortIndicatorShown())
+            w += 14;  // 排序箭头
+        m_table->setColumnWidth(c, qMax(16, w));
+    }
     int totalW = m_table->verticalHeader()->width() + 2 * m_table->frameWidth();
     for (int c = 0; c < cols; ++c) totalW += m_table->columnWidth(c);
     const int hh =
@@ -627,6 +672,7 @@ QJsonObject FloatWindow::currentConfig() const {
     cfg[QStringLiteral("name_length")] = m_nameLength;
     cfg[QStringLiteral("gear_visible")] = m_gearVisible;
     cfg[QStringLiteral("name_map")] = m_nameMap;
+    cfg[QStringLiteral("name_cache")] = m_nameCache;
     cfg[QStringLiteral("sort_key")] = m_sortKey;
     cfg[QStringLiteral("sort_asc")] = m_sortAsc;
     cfg[QStringLiteral("b1s1_display")] = b1s1ToString(m_b1s1);
